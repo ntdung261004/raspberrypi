@@ -16,7 +16,7 @@ from utils.audio import play_event_sound, play_score_sound
 from utils.processing import check_object_center, warp_crop_to_original, calculate_score
 
 # Thay thế bằng địa chỉ IP chính xác của máy Mac của bạn
-SERVER_MAC_URL = "http://192.168.1.95:5000"
+SERVER_MAC_URL = "http://192.168.1.154:5000"
 
 ORIGINAL_IMAGE_PATH = "images/original/bia_so_4.jpg"
 DEFAULT_MASK_PATH = "images/mask/mask_bia_so_4.jpg"
