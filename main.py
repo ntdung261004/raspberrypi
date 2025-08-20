@@ -18,7 +18,7 @@ from app import ProcessingWorker
 from utils.audio import play_event_sound
 
 # Thay thế bằng địa chỉ IP chính xác của máy Mac của bạn
-SERVER_MAC_URL = "http://192.168.1.154:5000"
+SERVER_MAC_URL = "http://192.168.1.196:5000"
 
 # --- Cấu hình GPIO cho nút bấm ---
 GPIO.setmode(GPIO.BCM)
@@ -141,14 +141,9 @@ def run_main():
             if frame_queue.qsize() < frame_queue.maxsize:
                 frame_queue.put(jpg_buffer.tobytes())
             
-            print("Nhấn trigger để chụp ảnh:", end='\r')
-            
             current_button_state = GPIO.input(TRIGGER_PIN)
             
             if current_button_state == GPIO.HIGH and previous_button_state == GPIO.LOW:
-                
-                capture_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"📸 Chụp ảnh lúc {capture_time}...")
                 
                 play_event_sound(-3) # Phát âm thanh "Đã bắn"
 
