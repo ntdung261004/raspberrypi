@@ -1,56 +1,89 @@
-import os
-from threading import Thread
-import subprocess
+# utils/audio.py - Phiên bản tối ưu dùng Pygame và Pre-loading
 
-# Ánh xạ các sự kiện với tên file âm thanh
-SCORE_SOUNDS = {
-    10: "10.mp3",
-    9: "9.mp3",
-    8: "8.mp3",
-    7: "7.mp3",
-    6: "6.mp3",
-    5: "5.mp3",
-    0: "outTarget.mp3", # Bắn trượt hoặc không xử lý được
-    -1: "connected.mp3", # Âm thanh khởi động
-    -2: "connected.mp3", # Âm thanh kết nối server thành công
-    -3: "shot.mp3" # Âm thanh thông báo đã bắn
+import pygame
+import os
+import time
+
+# --- Khởi tạo mixer với cơ chế chờ đợi ---
+def initialize_mixer():
+    """
+    Cố gắng khởi tạo pygame mixer. Nếu thất bại, chờ và thử lại.
+    """
+    while not pygame.mixer.get_init():
+        print("⏳ Đang chờ thiết bị âm thanh sẵn sàng...")
+        try:
+            pygame.mixer.init()
+        except pygame.error as e:
+            print(f"Lỗi tạm thời, sẽ thử lại: {e}")
+            time.sleep(2)
+    print("✅ Pygame mixer đã khởi tạo thành công!")
+
+initialize_mixer()
+
+# --- Tải trước tất cả âm thanh vào bộ nhớ ---
+
+# Ánh xạ các sự kiện với tên file âm thanh .wav
+SCORE_SOUNDS_PATHS = {
+    10: "10.wav",
+    9: "9.wav",
+    8: "8.wav",
+    7: "7.wav",
+    6: "6.wav",
+    5: "5.wav",
+    0: "outTarget.wav",
+    -1: "connected.wav",
+    -2: "connected.wav",
+    -3: "shot.wav"
 }
 
-def play_sound(filename):
-    """
-    Phát một file âm thanh bằng mpg123 trong một luồng riêng.
-    """
-    file_path = os.path.join('sounds', filename)
-    if not os.path.exists(file_path):
-        print(f"File âm thanh không tồn tại: {file_path}")
-        return
+# Dictionary để lưu các đối tượng âm thanh đã được tải vào RAM
+LOADED_SOUNDS = {}
 
-    def _play():
+def load_all_sounds():
+    """
+    Tải tất cả các file âm thanh từ đĩa vào một dictionary trong RAM.
+    """
+    print("⏳ Đang tải trước các file âm thanh vào bộ nhớ...")
+    for code, filename in SCORE_SOUNDS_PATHS.items():
+        file_path = os.path.join('sounds', filename)
+        if os.path.exists(file_path):
+            try:
+                LOADED_SOUNDS[code] = pygame.mixer.Sound(file_path)
+            except pygame.error as e:
+                print(f"Lỗi khi tải file {file_path}: {e}")
+        else:
+            print(f"⚠️ Cảnh báo: Không tìm thấy file âm thanh để tải trước: {file_path}")
+    print("✅ Đã tải xong âm thanh!")
+
+load_all_sounds()
+
+# --- Các hàm phát âm thanh (giữ nguyên logic của bạn) ---
+
+def play_sound_from_code(sound_code):
+    """
+    Phát một âm thanh đã được tải trước từ RAM.
+    """
+    sound_object = LOADED_SOUNDS.get(sound_code)
+    if sound_object:
         try:
-            # -q để chạy ở chế độ im lặng, chỉ phát âm thanh
-            subprocess.run(['mpg123', '-q', file_path], check=True)
-        except FileNotFoundError:
-            print("mpg123 không được cài đặt. Vui lòng chạy: sudo apt-get install mpg123")
+            sound_object.play()
         except Exception as e:
-            print(f"Lỗi khi phát âm thanh {file_path}: {e}")
-
-    audio_thread = Thread(target=_play, daemon=True)
-    audio_thread.start()
+            print(f"Lỗi khi phát âm thanh cho mã {sound_code}: {e}")
+    else:
+        print(f"⚠️ Không tìm thấy âm thanh đã được tải cho mã: {sound_code}")
 
 def play_event_sound(event_type):
     """
     Phát âm thanh cho các sự kiện cụ thể.
     """
-    filename = SCORE_SOUNDS.get(event_type)
-    if filename:
-        play_sound(filename)
+    play_sound_from_code(event_type)
 
 def play_score_sound(score):
     """
     Phát âm thanh tương ứng với điểm số.
     """
-    if score in SCORE_SOUNDS:
-        play_sound(SCORE_SOUNDS[score])
+    if score in LOADED_SOUNDS:
+        play_sound_from_code(score)
     else:
         # Nếu điểm không có trong từ điển, mặc định phát âm thanh "bắn trượt"
-        play_event_sound(0)
+        play_sound_from_code(0)

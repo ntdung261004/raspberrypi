@@ -8,13 +8,27 @@ def friendly_object_name(filename: str) -> str:
     name, _ = base.split('.') if '.' in base else (base, '')
     return name.replace('_', ' ')
 
-def check_object_center(results, image, conf_threshold=0.5):
-    h, w = image.shape[:2]
-    cx_img, cy_img = w // 2, h // 2
+# <<< SỬA ĐỔI: Thêm tham số 'calibrated_center' vào hàm >>>
+def check_object_center(results, image, calibrated_center, conf_threshold=0.5):
+    """
+    Kiểm tra xem tâm ngắm (đã hiệu chỉnh hoặc mặc định) có nằm trong bounding box không.
+    """
+    # <<< THÊM MỚI: Logic xử lý tâm mặc định hoặc tâm đã hiệu chỉnh >>>
+    if calibrated_center:
+        # Nếu đã hiệu chỉnh, dùng tọa độ đó
+        center_x = calibrated_center['x']
+        center_y = calibrated_center['y']
+        print(f"Sử dụng tâm đã hiệu chỉnh: ({center_x}, {center_y})")
+    else:
+        # Nếu chưa (giá trị là None), dùng tâm mặc định của khung hình
+        h, w = image.shape[:2]
+        center_x = w // 2
+        center_y = h // 2
+        print(f"Sử dụng tâm mặc định: ({center_x}, {center_y})")
 
     if not results or not results[0].boxes:
         print("⚠ Không tìm thấy object.")
-        return "TRƯỢT", None, None
+        return "TRƯỢT", None, (center_x, center_y) # Trả về tâm đã sử dụng
 
     res = results[0]
     boxes_xyxy = res.boxes.xyxy.cpu().numpy()
@@ -25,8 +39,9 @@ def check_object_center(results, image, conf_threshold=0.5):
             continue
         
         x1, y1, x2, y2 = [int(round(v)) for v in box[:4]]
-        if x1 <= cx_img <= x2 and y1 <= cy_img <= y2:
-            print(f"✅ TRÚNG | Confidence: {conf:.2f}")
+        # Kiểm tra xem tâm ngắm có nằm trong bounding box không
+        if x1 <= center_x <= x2 and y1 <= center_y <= y2:
+            print(f"✅ TRÚNG | Tâm ngắm ({center_x}, {center_y}) nằm trong mục tiêu.")
 
             orig_w = x2 - x1
             orig_h = y2 - y1
@@ -34,17 +49,14 @@ def check_object_center(results, image, conf_threshold=0.5):
                 continue
 
             obj_crop = image[y1:y2, x1:x2].copy()
-            obj_crop = cv2.resize(obj_crop, (500, 500), interpolation=cv2.INTER_AREA)
+            
+            # Trả về tọa độ điểm bắn TƯƠNG ĐỐI so với ảnh crop
+            shot_point_relative = (center_x - x1, center_y - y1)
+            
+            return "TRÚNG", obj_crop, shot_point_relative
 
-            scale_x = 500.0 / orig_w
-            scale_y = 500.0 / orig_h
-            cx_crop = int(round((cx_img - x1) * scale_x))
-            cy_crop = int(round((cy_img - y1) * scale_y))
-
-            return "TRÚNG", obj_crop, (cx_crop, cy_crop)
-
-    print("❌ TRƯỢT")
-    return "TRƯỢT", None, None
+    print("❌ TRƯỢT | Tâm ngắm không nằm trong bất kỳ mục tiêu nào.")
+    return "TRƯỢT", None, (center_x, center_y) # Trả về tâm đã sử dụng
 
 def warp_crop_to_original(
     original_img: np.ndarray,
@@ -70,9 +82,12 @@ def warp_crop_to_original(
     bf = cv2.BFMatcher(cv2.NORM_HAMMING)
     matches12 = bf.knnMatch(des1, des2, k=2)
     matches21 = bf.knnMatch(des2, des1, k=2)
+    
+    # Lọc các điểm match tốt bằng Lowe's ratio test
     good12 = [m for m, n in matches12 if m.distance < ratio_thresh * n.distance]
     good21 = [m for m, n in matches21 if m.distance < ratio_thresh * n.distance]
 
+    # Lọc các điểm match tương hỗ (mutual matches)
     mutual = []
     reverse_map = {(m.trainIdx, m.queryIdx) for m in good21}
     for m in good12:
@@ -107,7 +122,7 @@ def warp_crop_to_original(
     return warped, transformed_point
 
 def calculate_score(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
-    if original_img is None or mask is None:
+    if original_img is None or mask is None or pt is None:
         return 0
     x, y = int(pt[0]), int(pt[1])
     h, w = original_img.shape[:2]
@@ -117,17 +132,13 @@ def calculate_score(pt: Tuple[float, float], original_img: np.ndarray, mask: np.
     center_x, center_y = w // 2, h // 2
     distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
     
+    # Kiểm tra xem điểm chạm có nằm trong vùng hợp lệ của bia không
     if mask[y, x] == 255:
-        if distance < 56:
-            return 10
-        elif distance < 116:
-            return 9
-        elif distance < 173:
-            return 8
-        elif distance < 230:
-            return 7
-        elif distance < 285:
-            return 6
-        elif distance < 320:
-            return 5
+        if distance < 56: return 10
+        elif distance < 116: return 9
+        elif distance < 173: return 8
+        elif distance < 230: return 7
+        elif distance < 285: return 6
+        elif distance < 320: return 5
+    
     return 0

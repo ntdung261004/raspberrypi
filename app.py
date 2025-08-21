@@ -5,12 +5,9 @@ from datetime import datetime
 from threading import Thread
 import queue
 import time
-from typing import Optional, Tuple, List
 import base64
 import requests
-from flask import Flask, jsonify
 
-from module.camera_module import Camera
 from module.detection_module import ObjectDetector
 from utils.audio import play_event_sound, play_score_sound 
 from utils.processing import check_object_center, warp_crop_to_original, calculate_score
@@ -20,8 +17,6 @@ SERVER_MAC_URL = "http://192.168.1.196:5000"
 
 ORIGINAL_IMAGE_PATH = "images/original/bia_so_4.jpg"
 DEFAULT_MASK_PATH = "images/mask/mask_bia_so_4.jpg"
-
-app = Flask(__name__)
 
 class ProcessingWorker(Thread):
     def __init__(self, process_queue, detector):
@@ -37,20 +32,22 @@ class ProcessingWorker(Thread):
     def run(self):
         while self.running:
             try:
-                frame, capture_time = self.process_queue.get(timeout=0.1)
-                self._process_frame(frame, capture_time)
+                # <<< SỬA ĐỔI: Nhận thêm 'center_coords' từ hàng đợi >>>
+                frame, capture_time, center_coords = self.process_queue.get(timeout=0.1)
+                self._process_frame(frame, capture_time, center_coords)
                 self.process_queue.task_done()
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"Lỗi trong luồng xử lý: {e}")
     
-    def _process_frame(self, frame, capture_time):
+    # <<< SỬA ĐỔI: Thêm 'center_coords' vào hàm _process_frame >>>
+    def _process_frame(self, frame, capture_time, center_coords):
         print(f"✅ Bắt đầu xử lý ảnh chụp lúc {capture_time}...")
         
-        # Ngưỡng tin cậy ban đầu, gây ra lỗi nhận diện
-        results = self.detector.detect(frame, conf=0.8)
-        status, obj_crop, shot_point = check_object_center(results, frame, conf_threshold=0.8)
+        # <<< SỬA ĐỔI: Truyền tâm ngắm vào hàm check_object_center >>>
+        results = self.detector.detect(frame, conf=0.5)
+        status, obj_crop, shot_point = check_object_center(results, frame, center_coords, conf_threshold=0.5)
         
         result_data = {
             'time': capture_time,
@@ -93,13 +90,14 @@ class ProcessingWorker(Thread):
                 "score": 0,
                 "target": "Không trúng mục tiêu"
             })
+            # Giữ lại logic vẽ marker cũ của bạn cho trường hợp này
             processed_image = cv2.resize(frame, (500, 500))
             center = (processed_image.shape[1] // 2, processed_image.shape[0] // 2)
             cv2.drawMarker(processed_image, center, 
                            (0, 0, 255), cv2.MARKER_CROSS, markerSize=20, thickness=2)
             play_score_sound(0)
             
-        else:
+        else: # Bao gồm cả trường hợp "KHÔNG_PHÁT_HIỆN"
             print("⚠ Không xử lý được kết quả.")
             result_data.update({
                 "score": 0,
@@ -123,14 +121,3 @@ class ProcessingWorker(Thread):
     def stop(self):
         self.running = False
         print("🛑 ProcessingWorker đã dừng.")
-
-@app.route('/connection_status', methods=['POST'])
-def connection_status_pi():
-    global last_heartbeat
-    # API này trên Pi sẽ nhận tín hiệu kết nối từ Mac
-    last_heartbeat = time.time()
-    play_event_sound(-2) # Phát âm thanh khi kết nối thành công với Mac
-    return jsonify({'status': 'success'}), 200
-
-if __name__ == '__main__':
-    run_main()
