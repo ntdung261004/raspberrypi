@@ -1,10 +1,10 @@
-# utils/audio.py - Phiên bản tối ưu dùng Pygame và Pre-loading
+# utils/audio.py - Giải pháp 1: Tăng bộ đệm
 
 import pygame
 import os
 import time
 
-# --- Khởi tạo mixer với cơ chế chờ đợi ---
+# --- Khởi tạo mixer với cơ chế chờ đợi và BỘ ĐỆM LỚN HƠN ---
 def initialize_mixer():
     """
     Cố gắng khởi tạo pygame mixer. Nếu thất bại, chờ và thử lại.
@@ -12,6 +12,9 @@ def initialize_mixer():
     while not pygame.mixer.get_init():
         print("⏳ Đang chờ thiết bị âm thanh sẵn sàng...")
         try:
+            # <<< THÊM MỚI TẠI ĐÂY >>>
+            # Tăng buffer lên 4096 (gấp đôi mặc định) để cho loa có thời gian xử lý
+            pygame.mixer.pre_init(44100, -16, 2, 4096) 
             pygame.mixer.init()
         except pygame.error as e:
             print(f"Lỗi tạm thời, sẽ thử lại: {e}")
@@ -31,7 +34,7 @@ SCORE_SOUNDS_PATHS = {
     6: "6.wav",
     5: "5.wav",
     0: "outTarget.wav",
-    -1: "connected.wav",
+    -1: "connected.wav", # File này được đổi tên từ start.mp3 để nhất quán
     -2: "connected.wav",
     -3: "shot.wav"
 }

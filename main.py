@@ -7,22 +7,18 @@ import queue
 import time
 import requests
 from collections import deque
-import RPi.GPIO as GPIO
 import json
 import os
+import evdev
+from evdev import ecodes
 
 from module.camera_module import Camera
 from module.detection_module import ObjectDetector
 from app import ProcessingWorker 
 from utils.audio import play_event_sound
 
-SERVER_MAC_URL = "http://192.168.1.196:5000"
+SERVER_MAC_URL = "http://192.168.1.134:5000"
 CONFIG_FILE = "config.json"
-
-GPIO.cleanup()
-GPIO.setmode(GPIO.BCM)
-TRIGGER_PIN = 17
-GPIO.setup(TRIGGER_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) 
 
 RING_BUFFER = deque(maxlen=2)
 CALIBRATED_CENTER = None
@@ -50,7 +46,6 @@ def load_config():
         print(f"❌ Lỗi khi tải file cấu hình, sử dụng giá trị mặc định: {e}")
 
 def report_initial_config():
-    """Gửi cấu hình đã tải từ file lên server."""
     config_data = { 'zoom': CURRENT_ZOOM, 'center': CALIBRATED_CENTER }
     try:
         requests.post(f"{SERVER_MAC_URL}/report_config", json=config_data, timeout=10)
@@ -69,7 +64,7 @@ class SenderWorker(Thread):
             try:
                 jpg_buffer = self.frame_queue.get_nowait()
                 try:
-                    requests.post(f"{SERVER_MAC_URL}/video_upload", data=jpg_buffer, headers={'Content-Type': 'image/jpeg'}, timeout=0.5)
+                    requests.post(f"{SERVER_MAC_URL}/video_upload", data=jpg_buffer, headers={'Content-Type': 'image/jpeg'}, timeout=(1, 3))
                 except requests.exceptions.RequestException as e:
                     print(f"LỖI SENDER: {e}")
                 self.frame_queue.task_done()
@@ -99,6 +94,79 @@ class CommandPoller(Thread):
     def stop(self):
         self.running = False
 
+# <<< THAY THẾ HOÀN TOÀN CLASS NÀY >>>
+class TriggerListener(Thread):
+    def __init__(self, processing_queue, ring_buffer):
+        super().__init__()
+        self.processing_queue = processing_queue
+        self.ring_buffer = ring_buffer
+        self.daemon = True
+        self.running = True
+        self.device = None
+        self.device_path = None
+        ## QUAN TRỌNG: Hãy thay thế "AB Shutter3" bằng tên remote của bạn ##
+        self.device_name_keyword = "AB Shutter3"
+
+    def find_trigger_device(self):
+        """Tìm kiếm thiết bị và trả về đối tượng device nếu thấy."""
+        devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+        for device in devices:
+            if self.device_name_keyword.lower() in device.name.lower():
+                self.device_path = device.path
+                print(f"✅ Đã tìm thấy thiết bị trigger: {device.name} tại {self.device_path}")
+                return device
+        return None
+
+    def run(self):
+        print("🎧 Luồng TriggerListener bắt đầu hoạt động...")
+        while self.running:
+            try:
+                # Nếu thiết bị chưa được kết nối, hãy tìm kiếm nó
+                if self.device is None:
+                    print(f"🔎 Đang tìm kiếm thiết bị trigger chứa '{self.device_name_keyword}'...")
+                    self.device = self.find_trigger_device()
+                    if self.device is None:
+                        time.sleep(5) # Chờ 5 giây rồi tìm lại
+                        continue
+                
+                # Giành quyền kiểm soát độc quyền thiết bị
+                self.device.grab()
+                print(f"✅ Giành quyền kiểm soát {self.device.name}. Bắt đầu lắng nghe...")
+
+                # Bắt đầu lắng nghe các sự kiện
+                for event in self.device.read_loop():
+                    if not self.running:
+                        break
+                    
+                    if event.type == ecodes.EV_KEY and event.code == ecodes.KEY_VOLUMEDOWN and event.value == 1:
+                        capture_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        print(f"📸 (BT Trigger) Chụp ảnh lúc {capture_time}...")
+                        play_event_sound(-3)
+                        
+                        if len(self.ring_buffer) > 0 and not self.processing_queue.full():
+                            frame_to_process = self.ring_buffer[0]
+                            self.processing_queue.put((frame_to_process.copy(), capture_time, CALIBRATED_CENTER))
+            
+            except (IOError, OSError) as e:
+                # Lỗi này xảy ra khi thiết bị bị ngắt kết nối
+                print(f"⚠️ Thiết bị trigger đã bị ngắt kết nối: {e}. Đang tìm kiếm lại...")
+                if self.device:
+                    try:
+                        self.device.ungrab()
+                    except:
+                        pass # Bỏ qua lỗi nếu không thể ungrab
+                self.device = None # Đặt lại để vòng lặp tìm kiếm lại từ đầu
+                time.sleep(2) # Chờ 2 giây trước khi tìm lại
+
+    def stop(self):
+        self.running = False
+        # Ngắt luồng đọc nếu nó đang bị chặn
+        if self.device:
+            try:
+                evdev.util.find_ecodes_by_name # Một cách để ngắt read_loop, hơi hack một chút
+            except:
+                pass
+# <<< KẾT THÚC THAY THẾ >>>
 def set_zoom(picam2, zoom_factor, stream_size):
     if zoom_factor < 1.0: zoom_factor = 1.0
     full_width, full_height = picam2.camera_properties['PixelArraySize']
@@ -119,7 +187,6 @@ def set_zoom(picam2, zoom_factor, stream_size):
 
 def main():
     global CALIBRATED_CENTER, CURRENT_ZOOM
-    
     load_config()
     Thread(target=report_initial_config, daemon=True).start()
     
@@ -132,11 +199,13 @@ def main():
 
     detector = ObjectDetector(model_path="my_model.pt")
     
+    # Khởi tạo các luồng
     processing_worker = ProcessingWorker(process_queue=processing_queue, detector=detector)
     sender_worker = SenderWorker(frame_queue)
     command_poller = CommandPoller(command_queue)
+    trigger_listener = TriggerListener(processing_queue=processing_queue, ring_buffer=RING_BUFFER)
     
-    workers = [processing_worker, sender_worker, command_poller]
+    workers = [processing_worker, sender_worker, command_poller, trigger_listener]
     for worker in workers:
         worker.start()
 
@@ -147,7 +216,6 @@ def main():
     play_event_sound(-1)
     print("🎥 Bắt đầu livestream...")
     
-    previous_button_state = GPIO.LOW
     last_status_print_time = 0
     
     try:
@@ -172,35 +240,23 @@ def main():
             frame = cam.capture_frame()
             if frame is None:
                 continue
-
-            if CALIBRATED_CENTER:
-                center_to_draw = (CALIBRATED_CENTER['x'], CALIBRATED_CENTER['y'])
-            else:
-                h, w, _ = frame.shape
-                center_to_draw = (w // 2, h // 2)
             
-            cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
-            RING_BUFFER.append(frame)
+            # Lưu frame sạch vào buffer trước
+            RING_BUFFER.append(frame.copy())
 
-            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+            # Sau đó mới vẽ tâm ngắm lên frame để gửi đi livestream
+            center_to_draw = (CALIBRATED_CENTER['x'], CALIBRATED_CENTER['y']) if CALIBRATED_CENTER else (stream_width // 2, stream_height // 2)
+            cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
+
+            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
             if not frame_queue.full():
                 frame_queue.put(jpg_buffer.tobytes())
             
             current_time = time.time()
             if current_time - last_status_print_time > 3:
-                print("Hệ thống đang hoạt động, chờ trigger...")
+                print("Hệ thống đang hoạt động, chờ trigger Bluetooth...")
                 last_status_print_time = current_time
             
-            current_button_state = GPIO.input(TRIGGER_PIN)
-            if current_button_state == GPIO.HIGH and previous_button_state == GPIO.LOW:
-                capture_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"📸 Chụp ảnh lúc {capture_time}...")
-                play_event_sound(-3)
-                if len(RING_BUFFER) > 0 and not processing_queue.full():
-                    frame_to_process = RING_BUFFER[0]
-                    processing_queue.put((frame_to_process.copy(), capture_time, CALIBRATED_CENTER))
-
-            previous_button_state = current_button_state
             time.sleep(0.01)
                 
     except KeyboardInterrupt:
@@ -214,7 +270,6 @@ def main():
         
         cam.stop()
         cv2.destroyAllWindows()
-        GPIO.cleanup()
         print("Đã dọn dẹp và thoát.")
 
 if __name__ == '__main__':
