@@ -1,8 +1,7 @@
 # Môi trường ảo (Virtual environment)
 venv/
 .venv/
-.pt
-.jpg
+
 # File tạm
 *.pyc
 __pycache__/
@@ -12,7 +11,8 @@ __pycache__/
 
 # Các file logs
 *.log
-
+*.pt
+*.jpg
 # Các file cấu hình nhạy cảm
 # (ví dụ: file chứa mật khẩu, khóa API, vv.)
 *.env
