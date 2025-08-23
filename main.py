@@ -1,22 +1,20 @@
 import sys
 import cv2
-import numpy as np
-from datetime import datetime
-from threading import Thread
 import queue
 import time
-import requests
-from collections import deque
 import json
 import os
-import evdev
-from evdev import ecodes
 import socket
+from threading import Thread
+from collections import deque
+import requests
 
 from module.camera_module import Camera
 from module.detection_module import ObjectDetector
 from app import ProcessingWorker 
 from utils.audio import play_event_sound
+# <<< THÊM MỚI: Import các worker từ file mới >>>
+from threads.workers import SenderWorker, CommandPoller, TriggerListener
 
 # --- Cấu hình ---
 SERVER_HOSTNAME = "Minh-Luan.local" # Chỉ cần định nghĩa tên máy chủ ở đây
@@ -86,107 +84,6 @@ def set_zoom(picam2, zoom_factor, stream_size):
     picam2.set_controls({"ScalerCrop": crop_region})
     print(f"🔎 Đã thiết lập zoom kỹ thuật số: {zoom_factor}x")
 
-# --- Các lớp Worker ---
-class SenderWorker(Thread):
-    def __init__(self, frame_queue, server_url):
-        super().__init__()
-        self.frame_queue = frame_queue
-        self.server_url = server_url
-        self.daemon = True
-        self.running = True
-    def run(self):
-        while self.running:
-            try:
-                jpg_buffer = self.frame_queue.get_nowait()
-                try:
-                    requests.post(f"{self.server_url}/video_upload", data=jpg_buffer, headers={'Content-Type': 'image/jpeg'}, timeout=(2, 5))
-                except requests.exceptions.RequestException as e:
-                    print(f"‼️ LỖI SENDER: {e}")
-                self.frame_queue.task_done()
-            except queue.Empty:
-                time.sleep(0.01)
-                continue
-    def stop(self):
-        self.running = False
-
-class CommandPoller(Thread):
-    def __init__(self, command_queue, server_url):
-        super().__init__()
-        self.command_queue = command_queue
-        self.server_url = server_url
-        self.daemon = True
-        self.running = True
-    def run(self):
-        while self.running:
-            try:
-                response = requests.get(f"{self.server_url}/get_command", timeout=1.0)
-                if response.status_code == 200:
-                    command = response.json()
-                    if command:
-                        self.command_queue.put(command)
-            except requests.exceptions.RequestException:
-                pass
-            time.sleep(1)
-    def stop(self):
-        self.running = False
-
-class TriggerListener(Thread):
-    def __init__(self, processing_queue, ring_buffer):
-        super().__init__()
-        self.processing_queue = processing_queue
-        self.ring_buffer = ring_buffer
-        self.daemon = True
-        self.running = True
-        self.device = None
-        self.device_name_keyword = "AB Shutter3" # Thay bằng tên remote của bạn
-
-    def find_trigger_device(self):
-        devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-        for device in devices:
-            if self.device_name_keyword.lower() in device.name.lower():
-                print(f"✅ Đã tìm thấy thiết bị trigger: {device.name} tại {device.path}")
-                return device
-        return None
-
-    def run(self):
-        print("🎧 Luồng TriggerListener bắt đầu hoạt động...")
-        while self.running:
-            try:
-                if self.device is None:
-                    self.device = self.find_trigger_device()
-                    if self.device is None:
-                        print(f"🔎 Không tìm thấy trigger, đang tìm kiếm lại sau 5 giây...")
-                        time.sleep(5)
-                        continue
-                    else:
-                         self.device.grab()
-                         print(f"✅ Giành quyền kiểm soát {self.device.name}. Bắt đầu lắng nghe...")
-
-                for event in self.device.read():
-                    if event.type == ecodes.EV_KEY and event.code == ecodes.KEY_VOLUMEDOWN and event.value == 1:
-                        capture_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        print(f"📸 (BT Trigger) Chụp ảnh lúc {capture_time}...")
-                        play_event_sound(-3)
-                        
-                        if len(self.ring_buffer) > 0 and not self.processing_queue.full():
-                            frame_to_process = self.ring_buffer[0]
-                            self.processing_queue.put((frame_to_process.copy(), capture_time, CALIBRATED_CENTER))
-            
-            except BlockingIOError:
-                time.sleep(0.05)
-                continue
-            except (IOError, OSError) as e:
-                print(f"⚠️ Thiết bị trigger đã bị ngắt kết nối: {e}. Đang tìm kiếm lại...")
-                if self.device:
-                    try: self.device.close()
-                    except: pass
-                self.device = None
-                time.sleep(2)
-    
-    def stop(self):
-        print("🔌 Yêu cầu dừng TriggerListener...")
-        self.running = False
-
 def main():
     global CALIBRATED_CENTER, CURRENT_ZOOM
     
@@ -205,9 +102,12 @@ def main():
 
     detector = ObjectDetector(model_path="my_model.pt")
     
+    # Khởi tạo các luồng
+    # <<< SỬA LỖI 3: Khởi tạo các luồng theo đúng thiết kế module >>>
     processing_worker = ProcessingWorker(process_queue=processing_queue, detector=detector, server_url=server_mac_url)
     sender_worker = SenderWorker(frame_queue=frame_queue, server_url=server_mac_url)
     command_poller = CommandPoller(command_queue=command_queue, server_url=server_mac_url)
+    # TriggerListener cần được cung cấp queue và buffer
     trigger_listener = TriggerListener(processing_queue=processing_queue, ring_buffer=RING_BUFFER)
     
     workers = [processing_worker, sender_worker, command_poller, trigger_listener]
@@ -225,6 +125,7 @@ def main():
     
     try:
         while True:
+            # Vòng lặp chính giờ đây rất gọn gàng
             try:
                 command = command_queue.get_nowait()
                 if command.get('type') == 'center':
@@ -251,7 +152,7 @@ def main():
             center_to_draw = (CALIBRATED_CENTER['x'], CALIBRATED_CENTER['y']) if CALIBRATED_CENTER else (stream_width // 2, stream_height // 2)
             cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
 
-            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             if not frame_queue.full():
                 frame_queue.put(jpg_buffer.tobytes())
             

@@ -6,11 +6,13 @@ from utils.audio import play_score_sound
 from utils.processing import warp_crop_to_original, calculate_score, calculate_score_bia7
 from utils.image import save_debug_images, save_training_image
 
-def handle_hit_bia_so_4(hit_info, capture_time, original_img_bia4, mask_bia4):
+def handle_hit_bia_so_4(hit_info, capture_time, original_frame, original_img_bia4, mask_bia4):
     """
     Hàm xử lý logic riêng cho bia số 4.
     Trả về một dictionary chứa dữ liệu kết quả để gửi về server.
     """
+    # Lưu ảnh gốc để làm dữ liệu training
+    #save_training_image(original_frame)
     obj_crop = hit_info['crop']
     shot_point = hit_info['shot_point']
     
@@ -78,7 +80,7 @@ def handle_hit_bia_so_7_8(hit_info, capture_time, original_frame, original_img_b
         cv2.drawMarker(processed_image, scaled_shot_point, 
                        (0, 255, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3)
 
-    #play_score_sound(score)
+    play_score_sound(score)
     _, img_buffer = cv2.imencode('.jpg', processed_image)
     
     return {

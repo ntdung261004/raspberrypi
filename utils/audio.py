@@ -33,6 +33,10 @@ SCORE_SOUNDS_PATHS = {
     7: "7.wav",
     6: "6.wav",
     5: "5.wav",
+    4: "4.wav",
+    3: "3.wav",
+    2: "2.wav",
+    1: "1.wav",
     0: "outTarget.wav",
     -1: "connected.wav", # File này được đổi tên từ start.mp3 để nhất quán
     -2: "connected.wav",
