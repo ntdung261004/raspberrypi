@@ -2,6 +2,7 @@
 venv/
 .venv/
 .pt
+.jpg
 # File tạm
 *.pyc
 __pycache__/
