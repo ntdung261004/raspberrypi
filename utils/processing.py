@@ -8,55 +8,52 @@ def friendly_object_name(filename: str) -> str:
     name, _ = base.split('.') if '.' in base else (base, '')
     return name.replace('_', ' ')
 
-# <<< SỬA ĐỔI: Thêm tham số 'calibrated_center' vào hàm >>>
-def check_object_center(results, image, calibrated_center, conf_threshold=0.5):
+def check_object_center(detections, image, calibrated_center):
     """
-    Kiểm tra xem tâm ngắm (đã hiệu chỉnh hoặc mặc định) có nằm trong bounding box không.
+    Kiểm tra xem tâm ngắm có nằm trong bounding box của vật thể nào không.
+
+    Args:
+        detections: Danh sách các vật thể đã được nhận dạng từ ObjectDetector.
+        image: Khung hình gốc.
+        calibrated_center: Tọa độ tâm đã hiệu chỉnh (hoặc None).
+
+    Returns:
+        Tuple: (status, hit_info)
+        status (str): "TRÚNG" hoặc "TRƯỢT".
+        hit_info (dict): Thông tin của vật thể bị trúng, hoặc tọa độ tâm ngắm nếu trượt.
     """
-    # <<< THÊM MỚI: Logic xử lý tâm mặc định hoặc tâm đã hiệu chỉnh >>>
+    # Xác định tâm ngắm sẽ sử dụng
     if calibrated_center:
-        # Nếu đã hiệu chỉnh, dùng tọa độ đó
-        center_x = calibrated_center['x']
-        center_y = calibrated_center['y']
-        print(f"Sử dụng tâm đã hiệu chỉnh: ({center_x}, {center_y})")
+        center_x, center_y = calibrated_center['x'], calibrated_center['y']
     else:
-        # Nếu chưa (giá trị là None), dùng tâm mặc định của khung hình
-        h, w = image.shape[:2]
-        center_x = w // 2
-        center_y = h // 2
-        print(f"Sử dụng tâm mặc định: ({center_x}, {center_y})")
+        h, w, _ = image.shape
+        center_x, center_y = w // 2, h // 2
 
-    if not results or not results[0].boxes:
-        print("⚠ Không tìm thấy object.")
-        return "TRƯỢT", None, (center_x, center_y) # Trả về tâm đã sử dụng
-
-    res = results[0]
-    boxes_xyxy = res.boxes.xyxy.cpu().numpy()
-    confs = res.boxes.conf.cpu().numpy()
-
-    for box, conf in zip(boxes_xyxy, confs):
-        if conf < conf_threshold:
-            continue
+    # Tìm vật thể bị bắn trúng có độ tin cậy cao nhất
+    highest_conf_hit = None
+    for det in detections:
+        x1, y1, x2, y2 = det['box']
         
-        x1, y1, x2, y2 = [int(round(v)) for v in box[:4]]
-        # Kiểm tra xem tâm ngắm có nằm trong bounding box không
         if x1 <= center_x <= x2 and y1 <= center_y <= y2:
-            print(f"✅ TRÚNG | Tâm ngắm ({center_x}, {center_y}) nằm trong mục tiêu.")
+            if highest_conf_hit is None or det['conf'] > highest_conf_hit['conf']:
+                highest_conf_hit = det
 
-            orig_w = x2 - x1
-            orig_h = y2 - y1
-            if orig_w <= 0 or orig_h <= 0:
-                continue
-
-            obj_crop = image[y1:y2, x1:x2].copy()
-            
-            # Trả về tọa độ điểm bắn TƯƠNG ĐỐI so với ảnh crop
-            shot_point_relative = (center_x - x1, center_y - y1)
-            
-            return "TRÚNG", obj_crop, shot_point_relative
-
+    if highest_conf_hit:
+        x1, y1, x2, y2 = highest_conf_hit['box']
+        obj_crop = image[y1:y2, x1:x2].copy()
+        shot_point_relative = (center_x - x1, center_y - y1)
+        
+        hit_info = {
+            'name': highest_conf_hit['class_name'],
+            'crop': obj_crop,
+            'shot_point': shot_point_relative,
+            'conf': highest_conf_hit['conf']
+        }
+        print(f"✅ TRÚNG | Mục tiêu: {hit_info['name']} (Conf: {hit_info['conf']:.2f})")
+        return "TRÚNG", hit_info
+    
     print("❌ TRƯỢT | Tâm ngắm không nằm trong bất kỳ mục tiêu nào.")
-    return "TRƯỢT", None, (center_x, center_y) # Trả về tâm đã sử dụng
+    return "TRƯỢT", {'shot_point': (center_x, center_y)}
 
 def warp_crop_to_original(
     original_img: np.ndarray,
@@ -121,6 +118,47 @@ def warp_crop_to_original(
     warped = cv2.warpPerspective(obj_crop, H, (original_img.shape[1], original_img.shape[0]), flags=cv2.INTER_LINEAR)
     return warped, transformed_point
 
+#tính điểm bia 7,8
+def calculate_score_bia7(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
+    """
+    Tính điểm cho bia số 7-8 dựa trên các vòng elip.
+    """
+    if pt is None or mask is None or original_img is None:
+        return 0
+
+    x, y = int(pt[0]), int(pt[1])
+    # Lấy kích thước từ ảnh gốc thay vì ảnh mask để đảm bảo chính xác
+    h, w = original_img.shape[:2]
+
+    if not (0 <= y < h and 0 <= x < w) or mask[y, x] == 0:
+        return 0
+
+    center_x, center_y = 136, 177
+
+    ellipse_rings = [
+        {'score': 10, 'width': 63,  'height': 95},
+        {'score': 9,  'width': 126, 'height': 190},
+        {'score': 8,  'width': 189, 'height': 284},
+        {'score': 7,  'width': 252, 'height': 378},
+        {'score': 6,  'width': 309, 'height': 464},
+        {'score': 5,  'width': 375, 'height': 562},
+        {'score': 4,  'width': 436, 'height': 654},
+        {'score': 3,  'width': 497, 'height': 746},
+        {'score': 2,  'width': 557, 'height': 836},
+        {'score': 1,  'width': 613, 'height': 920}
+    ]
+
+    for ring in ellipse_rings:
+        a = ring['width'] / 2.0
+        b = ring['height'] / 2.0
+        if a > 0 and b > 0:
+            check = ((x - center_x)**2 / a**2) + ((y - center_y)**2 / b**2)
+            if check <= 1:
+                return ring['score']
+    
+    return 0
+
+#tính điểm bia số 4
 def calculate_score(pt: Tuple[float, float], original_img: np.ndarray, mask: np.ndarray) -> int:
     if original_img is None or mask is None or pt is None:
         return 0
