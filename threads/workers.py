@@ -21,18 +21,28 @@ class SenderWorker(Thread):
         self.server_url = server_url
         self.daemon = True
         self.running = True
+
     def run(self):
         while self.running:
             try:
+                if not main_module.SERVER_IS_CONNECTED:
+                    time.sleep(1)
+                    continue
+
                 jpg_buffer = self.frame_queue.get_nowait()
                 try:
                     requests.post(f"{self.server_url}/video_upload", data=jpg_buffer, headers={'Content-Type': 'image/jpeg'}, timeout=(2, 5))
                 except requests.exceptions.RequestException as e:
-                    print(f"‼️ LỖI SENDER: {e}")
-                self.frame_queue.task_done()
+                    # <<< THAY ĐỔI: Chủ động báo mất kết nối >>>
+                    if main_module.SERVER_IS_CONNECTED:
+                        print("‼️ LỖI SENDER: Mất kết nối khi gửi video. Tạm dừng.")
+                        main_module.SERVER_IS_CONNECTED = False
+                finally:
+                    self.frame_queue.task_done()
             except queue.Empty:
                 time.sleep(0.01)
                 continue
+                
     def stop(self):
         self.running = False
 
@@ -43,17 +53,33 @@ class CommandPoller(Thread):
         self.server_url = server_url
         self.daemon = True
         self.running = True
+        self.last_server_heartbeat = 0
+
     def run(self):
         while self.running:
             try:
                 response = requests.get(f"{self.server_url}/get_command", timeout=1.0)
                 if response.status_code == 200:
-                    command = response.json()
+                    data = response.json()
+                    if data.get('timestamp'):
+                        if not main_module.SERVER_IS_CONNECTED:
+                            print("✅ Khôi phục kết nối tới server!")
+                        main_module.SERVER_IS_CONNECTED = True
+                        self.last_server_heartbeat = time.time()
+                    
+                    command = data.get('command')
                     if command:
                         self.command_queue.put(command)
+
             except requests.exceptions.RequestException:
-                pass
-            time.sleep(1)
+                # <<< THAY ĐỔI: Chủ động báo mất kết nối nếu cần >>>
+                if time.time() - self.last_server_heartbeat > 5: # Rút ngắn thời gian chờ xuống 5s
+                    if main_module.SERVER_IS_CONNECTED:
+                        print("‼️ LỖI POLLER: Mất kết nối. Tạm dừng.")
+                        main_module.SERVER_IS_CONNECTED = False
+            
+            time.sleep(2) # Tăng thời gian hỏi lệnh để giảm tải mạng
+            
     def stop(self):
         self.running = False
 

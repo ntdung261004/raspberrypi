@@ -51,7 +51,10 @@ class ProcessingWorker(Thread):
             requests.post(f"{self.server_url}/processed_data_upload", json=result_data, timeout=5)
             print("🚀 Đã gửi dữ liệu xử lý lên server thành công.")
         except requests.exceptions.RequestException as e:
-            print(f"❌ Lỗi khi gửi dữ liệu xử lý: {e}")
+            # <<< THAY ĐỔI: Chủ động báo mất kết nối >>>
+            if main_module.SERVER_IS_CONNECTED:
+                print(f"❌ Lỗi khi gửi dữ liệu xử lý. Mất kết nối. {e}")
+                main_module.SERVER_IS_CONNECTED = False
 
     def _process_frame(self, frame, capture_time, center_coords):
         """Hàm điều phối, gọi đến các handler tương ứng."""

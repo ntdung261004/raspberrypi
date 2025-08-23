@@ -12,7 +12,7 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame, original_img_bia
     Trả về một dictionary chứa dữ liệu kết quả để gửi về server.
     """
     # Lưu ảnh gốc để làm dữ liệu training
-    #save_training_image(original_frame)
+    save_training_image(original_frame)
     obj_crop = hit_info['crop']
     shot_point = hit_info['shot_point']
     
@@ -92,6 +92,7 @@ def handle_miss(hit_info, capture_time, original_frame):
     Hàm xử lý khi bắn trượt hoặc không phát hiện được.
     Trả về một dictionary chứa dữ liệu kết quả để gửi về server.
     """
+    save_training_image(original_frame)
     status_text = "Không trúng mục tiêu"
     if hit_info is None:
         status_text = "Không xử lý được"

@@ -19,6 +19,7 @@ from threads.workers import SenderWorker, CommandPoller, TriggerListener
 # --- Cấu hình ---
 SERVER_HOSTNAME = "Minh-Luan.local" # Chỉ cần định nghĩa tên máy chủ ở đây
 CONFIG_FILE = "config.json"
+SERVER_IS_CONNECTED = True
 
 # --- Biến toàn cục ---
 RING_BUFFER = deque(maxlen=2)
@@ -115,6 +116,15 @@ def main():
         worker.start()
 
     cam.start()
+    # <<< THÊM MỚI TẠI ĐÂY: Giai đoạn "Làm nóng" >>>
+    print("🔥 Đang làm nóng model AI... Vui lòng chờ.")
+    # Chụp một frame thật từ camera để có kích thước đúng
+    dummy_frame = cam.capture_frame()
+    if dummy_frame is not None:
+        # Thực hiện một lần nhận diện giả để tải model vào bộ nhớ
+        detector.detect(dummy_frame)
+    print("✅ Model đã được làm nóng!")
+    # <<< KẾT THÚC PHẦN THÊM MỚI >>>
     set_zoom(cam.picam2, CURRENT_ZOOM, (stream_width, stream_height))
     
     print("✅ Hệ thống đã sẵn sàng!")
