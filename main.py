@@ -101,7 +101,7 @@ def main():
     frame_queue = queue.Queue(maxsize=10)
     command_queue = queue.Queue(maxsize=5)
 
-    detector = ObjectDetector(model_path="my_model.pt")
+    detector = ObjectDetector(model_path="my_modelv1.pt")
     
     # Khởi tạo các luồng
     # <<< SỬA LỖI 3: Khởi tạo các luồng theo đúng thiết kế module >>>

@@ -8,13 +8,18 @@ import base64
 # Import các module chức năng
 from module.detection_module import ObjectDetector
 from utils.processing import check_object_center
-from utils.handles import handle_hit_bia_so_4, handle_hit_bia_so_7_8, handle_miss
+from utils.handles import handle_hit_bia_so_4, handle_hit_bia_so_7, handle_hit_bia_so_8, handle_miss
 
 # Đường dẫn tài nguyên
-ORIGINAL_IMAGE_BIA4_PATH = "images/original/bia_so_4.jpg"
-MASK_BIA4_PATH = "images/mask/mask_bia_so_4.jpg"
-ORIGINAL_IMAGE_BIA7_PATH = "images/original/original_bia_so_7_8.png"
-MASK_BIA7_PATH = "images/mask/mask_bia_7_8.png" 
+ORIGINAL_IMAGE_BIA4_PATH = "images/original/bia_so_4.png"
+ORIGINAL_IMAGE_BIA4_ALT_PATH = "images/original/bia_so_4_1.png"
+MASK_BIA4_PATH = "images/mask/mask_bia_so_4.png"
+ORIGINAL_IMAGE_BIA7_PATH = "images/original/bia_so_7.png"
+ORIGINAL_IMAGE_BIA7_ALT_PATH = "images/original/bia_so_7_1.png"
+MASK_BIA7_PATH = "images/mask/mask_bia_so_7.png"
+ORIGINAL_IMAGE_BIA8_PATH = "images/original/bia_so_8.png"
+ORIGINAL_IMAGE_BIA8_ALT_PATH = "images/original/bia_so_8_1.png"
+MASK_BIA8_PATH = "images/mask/mask_bia_so_8.png"
 
 class ProcessingWorker(Thread):
     def __init__(self, process_queue, detector, server_url):
@@ -26,9 +31,16 @@ class ProcessingWorker(Thread):
         print("💡 Đang tải tài nguyên cho các loại bia...")
         self.original_img_bia4 = cv2.imread(ORIGINAL_IMAGE_BIA4_PATH)
         self.mask_bia4 = cv2.imread(MASK_BIA4_PATH, cv2.IMREAD_GRAYSCALE)
+        self.original_img_bia4_alt = cv2.imread(ORIGINAL_IMAGE_BIA4_ALT_PATH)
+        
         self.original_img_bia7 = cv2.imread(ORIGINAL_IMAGE_BIA7_PATH)
         self.mask_bia7 = cv2.imread(MASK_BIA7_PATH, cv2.IMREAD_GRAYSCALE)
-        
+        self.original_img_bia7_alt = cv2.imread(ORIGINAL_IMAGE_BIA7_ALT_PATH)
+
+        self.original_img_bia8 = cv2.imread(ORIGINAL_IMAGE_BIA8_PATH)
+        self.mask_bia8 = cv2.imread(MASK_BIA8_PATH, cv2.IMREAD_GRAYSCALE)
+        self.original_img_bia8_alt = cv2.imread(ORIGINAL_IMAGE_BIA8_ALT_PATH)
+
         self.daemon = True
         self.running = True
         print("💡 ProcessingWorker đã khởi động.")
@@ -58,7 +70,7 @@ class ProcessingWorker(Thread):
 
     def _process_frame(self, frame, capture_time, center_coords):
         """Hàm điều phối, gọi đến các handler tương ứng."""
-        detections = self.detector.detect(frame, conf=0.6)
+        detections = self.detector.detect(frame, conf=0.75)
         status, hit_info = check_object_center(detections, frame, center_coords)
         
         result_data = None
@@ -66,9 +78,11 @@ class ProcessingWorker(Thread):
         if status == "TRÚNG":
             target_name = hit_info.get('name')
             if target_name == 'bia_so_4':
-                result_data = handle_hit_bia_so_4(hit_info, capture_time, frame, self.original_img_bia4, self.mask_bia4)
+                result_data = handle_hit_bia_so_4(hit_info, capture_time, frame, self.original_img_bia4, self.original_img_bia4_alt, self.mask_bia4)
             elif target_name == 'bia_so_7_8':
-                result_data = handle_hit_bia_so_7_8(hit_info, capture_time, frame, self.original_img_bia7, self.mask_bia7)
+                result_data = handle_hit_bia_so_7(hit_info, capture_time, frame, self.original_img_bia7, self.original_img_bia7_alt, self.mask_bia7)
+            elif target_name == 'bia_so_8':
+                result_data = handle_hit_bia_so_8(hit_info, capture_time, frame, self.original_img_bia8, self.original_img_bia8_alt, self.mask_bia8)
             else:
                 print(f"Phát hiện trúng mục tiêu không xác định: {target_name}")
                 result_data = handle_miss(hit_info, capture_time, frame)

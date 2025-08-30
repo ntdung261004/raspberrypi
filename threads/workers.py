@@ -117,9 +117,9 @@ class TriggerListener(Thread):
 
                 for event in self.device.read():
                     if event.type == ecodes.EV_KEY and event.code == ecodes.KEY_VOLUMEDOWN and event.value == 1:
+                        play_event_sound(-3)
                         capture_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         print(f"📸 (BT Trigger) Chụp ảnh lúc {capture_time}...")
-                        play_event_sound(-3)
 
                         # Truy cập biến CALIBRATED_CENTER được truyền vào từ main
                         if len(self.ring_buffer) > 0 and not self.processing_queue.full():
