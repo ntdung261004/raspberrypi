@@ -2,7 +2,7 @@
 
 import cv2
 import base64
-from utils.audio import play_score_sound
+from utils.audio import audio_manager
 from utils.processing import warp_crop_to_original, calculate_score_bia4, calculate_score_bia7, calculate_score_bia8
 from utils.image import save_debug_images, save_training_image
 
@@ -13,7 +13,6 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
     Hàm xử lý logic riêng cho bia số 7.
     Thử warp với 2 ảnh gốc, nếu đều thất bại mới tính điểm trên ảnh crop.
     """
-    save_training_image(original_frame)
     obj_crop = hit_info['crop']
     shot_point = hit_info['shot_point']
     
@@ -56,7 +55,7 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
             cv2.drawMarker(processed_image, scaled_shot_point, 
                            (0, 255, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu vàng: warp thất bại
 
-    play_score_sound(score)
+    audio_manager.play_score(score)
     _, img_buffer = cv2.imencode('.jpg', processed_image)
     
     return {
@@ -71,7 +70,6 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
     Hàm xử lý logic riêng cho bia số 8.
     Thử warp với 2 ảnh gốc, nếu đều thất bại mới tính điểm trên ảnh crop.
     """
-    save_training_image(original_frame)
     obj_crop = hit_info['crop']
     shot_point = hit_info['shot_point']
     
@@ -114,7 +112,7 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
             cv2.drawMarker(processed_image, scaled_shot_point, 
                            (0, 255, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu vàng: warp thất bại
 
-    play_score_sound(score)
+    audio_manager.play_score(score)
     _, img_buffer = cv2.imencode('.jpg', processed_image)
     
     return {
@@ -129,7 +127,6 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
     Hàm xử lý logic riêng cho bia số 4.
     Thử warp với 2 ảnh gốc, nếu đều thất bại mới tính điểm trên ảnh crop.
     """
-    save_training_image(original_frame)
     obj_crop = hit_info['crop']
     shot_point = hit_info['shot_point']
     
@@ -172,7 +169,7 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
             cv2.drawMarker(processed_image, scaled_shot_point,
                            (0, 255, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu vàng: warp thất bại
 
-    play_score_sound(score)
+    audio_manager.play_score(score)
     _, img_buffer = cv2.imencode('.jpg', processed_image)
     
     return {
@@ -185,7 +182,6 @@ def handle_miss(hit_info, capture_time, original_frame):
     Hàm xử lý khi bắn trượt hoặc không phát hiện được.
     Trả về một dictionary chứa dữ liệu kết quả để gửi về server.
     """
-    save_training_image(original_frame)
     status_text = "Không trúng mục tiêu"
     if hit_info is None:
         status_text = "Không xử lý được"
@@ -193,7 +189,7 @@ def handle_miss(hit_info, capture_time, original_frame):
     else:
         print("❌ Bắn không trúng mục tiêu.")
 
-    play_score_sound(0)
+    audio_manager.play_miss()
     
     shot_point = hit_info['shot_point']
     processed_image = original_frame.copy()

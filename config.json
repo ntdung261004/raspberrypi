@@ -1,7 +1,35 @@
 {
-    "zoom": 3.8,
-    "center": {
-        "x": 306,
-        "y": 437
+    "server": {
+        "hostname": "192.168.1.100",
+        "port": 8080
+    },
+    "camera": {
+        "stream_width": 480,
+        "stream_height": 640
+    },
+    "model": {
+        "path": "my_modelv8s.pt",
+        "confidence": 0.9
+    },
+    "trigger": {
+        "device_keyword": "AB Shutter3"
+    },
+    "resource_paths": {
+        "original_bia4": "images/original/bia_so_4.png",
+        "original_bia4_alt": "images/original/bia_so_4_1.png",
+        "mask_bia4": "images/mask/mask_bia_so_4.png",
+        "original_bia7": "images/original/bia_so_7.png",
+        "original_bia7_alt": "images/original/bia_so_7_1.png",
+        "mask_bia7": "images/mask/mask_bia_so_7.png",
+        "original_bia8": "images/original/bia_so_8.png",
+        "original_bia8_alt": "images/original/bia_so_8_1.png",
+        "mask_bia8": "images/mask/mask_bia_so_8.png"
+    },
+    "saved_settings": {
+        "zoom": 1.5,
+        "center": {
+            "x": 323,
+            "y": 185
+        }
     }
 }

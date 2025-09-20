@@ -3,7 +3,7 @@
 from ultralytics import YOLO
 
 class ObjectDetector:
-    def __init__(self, model_path="my_model.pt"):
+    def __init__(self, model_path="my_modelv8s.pt"):
         """
         Khởi tạo detector với model YOLO.
         """
@@ -15,7 +15,7 @@ class ObjectDetector:
             print(f"❌ Lỗi khi tải model YOLO: {e}")
             self.model = None
 
-    def detect(self, image, conf=0.5):
+    def detect(self, image, conf=0.75):
         """
         Thực hiện nhận dạng đối tượng trên ảnh.
 

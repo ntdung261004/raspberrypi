@@ -1,96 +1,126 @@
-# utils/audio.py - Giải pháp 1: Tăng bộ đệm
-
+# utils/audio.py
 import pygame
 import os
-import time
+import logging
 
-# --- Khởi tạo mixer với cơ chế chờ đợi và BỘ ĐỆM LỚN HƠN ---
-def initialize_mixer():
+# --- Cài đặt logging cơ bản để nhận thông báo ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - [%(levelname)s] - %(message)s')
+
+class AudioManager:
     """
-    Cố gắng khởi tạo pygame mixer. Nếu thất bại, chờ và thử lại.
+    Lớp quản lý tập trung tất cả các chức năng âm thanh của ứng dụng.
+    Sử dụng mẫu thiết kế Singleton (được tạo một lần duy nhất).
     """
-    while not pygame.mixer.get_init():
-        print("⏳ Đang chờ thiết bị âm thanh sẵn sàng...")
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(AudioManager, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
+    def __init__(self):
+        # Biến cờ để đảm bảo __init__ chỉ chạy một lần
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
+
+        self.sounds = {}
         try:
-            # <<< THÊM MỚI TẠI ĐÂY >>>
-            # Tăng buffer lên 4096 (gấp đôi mặc định) để cho loa có thời gian xử lý
-            pygame.mixer.pre_init(44100, -16, 2, 4096) 
+            # Sử dụng cài đặt mặc định của pygame, đã được tối ưu
             pygame.mixer.init()
+            logging.info("✅ Pygame mixer đã khởi tạo thành công!")
+            self._load_all_sounds()
         except pygame.error as e:
-            print(f"Lỗi tạm thời, sẽ thử lại: {e}")
-            time.sleep(2)
-    print("✅ Pygame mixer đã khởi tạo thành công!")
+            logging.error(f"❌ Lỗi nghiêm trọng khi khởi tạo pygame.mixer: {e}. Âm thanh sẽ không hoạt động.")
+            self.sounds = None # Vô hiệu hóa âm thanh nếu có lỗi
 
-initialize_mixer()
+    def _load_all_sounds(self):
+        """
+        Tải tất cả các file âm thanh vào bộ nhớ (RAM).
+        Phương thức này được gọi tự động khi khởi tạo.
+        """
+        if self.sounds is None:
+            return
 
-# --- Tải trước tất cả âm thanh vào bộ nhớ ---
+        logging.info("⏳ Đang tải trước các file âm thanh vào bộ nhớ...")
+        
+        # Tự động xác định đường dẫn đến thư mục 'sounds'
+        # Giả định file audio.py nằm trong thư mục 'utils', và 'sounds' ngang cấp với 'utils'
+        sounds_dir = os.path.join(os.path.dirname(__file__), '..', 'sounds')
 
-# Ánh xạ các sự kiện với tên file âm thanh .wav
-SCORE_SOUNDS_PATHS = {
-    10: "10.wav",
-    9: "9.wav",
-    8: "8.wav",
-    7: "7.wav",
-    6: "6.wav",
-    5: "5.wav",
-    4: "4.wav",
-    3: "3.wav",
-    2: "2.wav",
-    1: "1.wav",
-    0: "outTarget.wav",
-    -1: "connected.wav", # File này được đổi tên từ start.mp3 để nhất quán
-    -2: "connected.wav",
-    -3: "shot.wav"
-}
+        # Ánh xạ TÊN LOGIC với TÊN FILE
+        sound_map = {
+            # Tên sự kiện
+            "shot": "shot.mp3",
+            "miss": "outTarget.mp3",
+            "connected": "connected.mp3",
+            # Tên điểm số
+            "score_1": "1.mp3",
+            "score_2": "2.mp3",
+            "score_3": "3.mp3",
+            "score_4": "4.mp3",
+            "score_5": "5.mp3",
+            "score_6": "6.mp3",
+            "score_7": "7.mp3",
+            "score_8": "8.mp3",
+            "score_9": "9.mp3",
+            "score_10": "10.mp3"
+        }
 
-# Dictionary để lưu các đối tượng âm thanh đã được tải vào RAM
-LOADED_SOUNDS = {}
+        for name, filename in sound_map.items():
+            file_path = os.path.join(sounds_dir, filename)
+            if os.path.exists(file_path):
+                try:
+                    self.sounds[name] = pygame.mixer.Sound(file_path)
+                except pygame.error as e:
+                    logging.error(f"⚠️ Lỗi khi tải file {file_path}: {e}")
+            else:
+                logging.warning(f"🔍 Không tìm thấy file âm thanh: {file_path}")
+        
+        logging.info("✅ Đã tải xong âm thanh!")
 
-def load_all_sounds():
-    """
-    Tải tất cả các file âm thanh từ đĩa vào một dictionary trong RAM.
-    """
-    print("⏳ Đang tải trước các file âm thanh vào bộ nhớ...")
-    for code, filename in SCORE_SOUNDS_PATHS.items():
-        file_path = os.path.join('sounds', filename)
-        if os.path.exists(file_path):
+    def play_sound(self, name: str):
+        """
+        Phát một âm thanh dựa trên TÊN LOGIC của nó.
+        Đây là phương thức cốt lõi.
+        """
+        if self.sounds is None:
+            logging.warning("Không thể phát âm thanh vì mixer chưa được khởi tạo.")
+            return
+        
+        sound_object = self.sounds.get(name)
+        if sound_object:
             try:
-                LOADED_SOUNDS[code] = pygame.mixer.Sound(file_path)
-            except pygame.error as e:
-                print(f"Lỗi khi tải file {file_path}: {e}")
+                sound_object.play()
+            except Exception as e:
+                logging.error(f"Lỗi khi phát âm thanh '{name}': {e}")
         else:
-            print(f"⚠️ Cảnh báo: Không tìm thấy file âm thanh để tải trước: {file_path}")
-    print("✅ Đã tải xong âm thanh!")
+            logging.warning(f"Không tìm thấy âm thanh có tên: '{name}'")
 
-load_all_sounds()
+    # --- Các hàm tiện ích (Helper Methods) để gọi dễ hơn ---
 
-# --- Các hàm phát âm thanh (giữ nguyên logic của bạn) ---
+    def play_score(self, score: int):
+        """Phát âm thanh cho một điểm số cụ thể (từ 1 đến 10)."""
+        if 1 <= score <= 10:
+            self.play_sound(f"score_{score}")
+        else:
+            # Nếu điểm không hợp lệ, mặc định phát tiếng bắn trượt
+            self.play_miss()
+            logging.warning(f"Điểm số không hợp lệ ({score}), phát âm thanh 'miss'.")
 
-def play_sound_from_code(sound_code):
-    """
-    Phát một âm thanh đã được tải trước từ RAM.
-    """
-    sound_object = LOADED_SOUNDS.get(sound_code)
-    if sound_object:
-        try:
-            sound_object.play()
-        except Exception as e:
-            print(f"Lỗi khi phát âm thanh cho mã {sound_code}: {e}")
-    else:
-        print(f"⚠️ Không tìm thấy âm thanh đã được tải cho mã: {sound_code}")
+    def play_shot(self):
+        """Phát âm thanh tiếng súng bắn."""
+        print("Thực hiện phát âm thanh!")
+        self.play_sound("shot")
 
-def play_event_sound(event_type):
-    """
-    Phát âm thanh cho các sự kiện cụ thể.
-    """
-    play_sound_from_code(event_type)
+    def play_miss(self):
+        """Phát âm thanh bắn trượt mục tiêu."""
+        self.play_sound("miss")
 
-def play_score_sound(score):
-    """
-    Phát âm thanh tương ứng với điểm số.
-    """
-    if score in LOADED_SOUNDS:
-        play_sound_from_code(score)
-    else:
-        # Nếu điểm không có trong từ điển, mặc định phát âm thanh "bắn trượt"
-        play_sound_from_code(0)
+    def play_connected(self):
+        """Phát âm thanh kết nối thành công."""
+        self.play_sound("connected")
+
+# --- TẠO RA MỘT THỂ HIỆN (INSTANCE) DUY NHẤT CỦA AUDIOMANAGER ---
+# Đây là chìa khóa để sử dụng dễ dàng trong toàn bộ dự án.
+audio_manager = AudioManager()

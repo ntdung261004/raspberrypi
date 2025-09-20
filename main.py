@@ -5,69 +5,77 @@ import time
 import json
 import os
 import socket
+import logging
 from threading import Thread
 from collections import deque
 import requests
 
-from module.camera_module import Camera
-from module.detection_module import ObjectDetector
-from app import ProcessingWorker 
-from utils.audio import play_event_sound
-# <<< THÊM MỚI: Import các worker từ file mới >>>
+# <<< TỐI ƯU: Import module thay vì class lẻ >>>
+from module import camera_module, detection_module
+from app import ProcessingWorker
 from threads.workers import SenderWorker, CommandPoller, TriggerListener
+from utils.audio import audio_manager
 
-# --- Cấu hình ---
-SERVER_HOSTNAME = "Minh-Luan.local" # Chỉ cần định nghĩa tên máy chủ ở đây
 CONFIG_FILE = "config.json"
-SERVER_IS_CONNECTED = True
 
-# --- Biến toàn cục ---
-RING_BUFFER = deque(maxlen=2)
-CALIBRATED_CENTER = None
-CURRENT_ZOOM = 1.0
+# <<< TỐI ƯU: Tạo một lớp để quản lý trạng thái chia sẻ >>>
+class SharedState:
+    def __init__(self):
+        self.server_is_connected = True
+        self.calibrated_center = None
+        self.current_zoom = 1.0
 
-# --- Các hàm ---
-def save_config():
-    config_data = { 'zoom': CURRENT_ZOOM, 'center': CALIBRATED_CENTER }
-    try:
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config_data, f, indent=4)
-        print(f"💾 Đã lưu cấu hình: {config_data}")
-    except Exception as e:
-        print(f"❌ Lỗi khi lưu file cấu hình: {e}")
+def setup_logging():
+    """Thiết lập hệ thống logging tập trung."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("shooting_range.log"),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    logging.info("Hệ thống logging đã được khởi tạo.")
 
 def load_config():
-    global CURRENT_ZOOM, CALIBRATED_CENTER
+    """Tải toàn bộ cấu hình từ file JSON."""
     try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                config_data = json.load(f)
-                CURRENT_ZOOM = config_data.get('zoom', 1.0)
-                CALIBRATED_CENTER = config_data.get('center', None)
-                print(f"✅ Đã tải cấu hình từ phiên trước: Zoom={CURRENT_ZOOM}, Tâm={CALIBRATED_CENTER}")
-    except Exception as e:
-        print(f"❌ Lỗi khi tải file cấu hình, sử dụng giá trị mặc định: {e}")
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+        logging.info("Tải file cấu hình thành công.")
+        return config
+    except FileNotFoundError:
+        logging.error(f"Lỗi nghiêm trọng: Không tìm thấy file {CONFIG_FILE}! Vui lòng tạo file.")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        logging.error(f"Lỗi nghiêm trọng: File {CONFIG_FILE} không đúng định dạng JSON.")
+        sys.exit(1)
 
-def report_initial_config(server_url):
-    config_data = { 'zoom': CURRENT_ZOOM, 'center': CALIBRATED_CENTER }
+def save_runtime_settings(config, shared_state):
+    """Lưu các cài đặt thay đổi trong lúc chạy (zoom, center)."""
+    config['saved_settings']['zoom'] = shared_state.current_zoom
+    config['saved_settings']['center'] = shared_state.calibrated_center
     try:
-        requests.post(f"{server_url}/report_config", json=config_data, timeout=10)
-        print(f"📢 Đã báo cáo cấu hình ban đầu lên server: {config_data}")
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ Không thể báo cáo cấu hình ban đầu: {e}")
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=4)
+        logging.info(f"Đã lưu cài đặt mới: {config['saved_settings']}")
+    except Exception as e:
+        logging.error(f"Lỗi khi lưu file cấu hình: {e}")
 
 def resolve_hostname(hostname):
-    print(f"🔄 Đang phân giải hostname '{hostname}'...")
+    """Phân giải hostname thành địa chỉ IP, thử lại nếu thất bại."""
+    logging.info(f"Đang phân giải hostname '{hostname}'...")
     while True:
         try:
             ip_address = socket.gethostbyname(hostname)
-            print(f"✅ Phân giải thành công: {hostname} -> {ip_address}")
+            logging.info(f"Phân giải thành công: {hostname} -> {ip_address}")
             return ip_address
         except socket.gaierror:
-            print(f"⚠️ Không thể phân giải hostname. Thử lại sau 5 giây...")
+            logging.warning(f"Không thể phân giải hostname. Thử lại sau 5 giây...")
             time.sleep(5)
 
 def set_zoom(picam2, zoom_factor, stream_size):
+    """Thiết lập zoom kỹ thuật số cho camera."""
     if zoom_factor < 1.0: zoom_factor = 1.0
     full_width, full_height = picam2.camera_properties['PixelArraySize']
     stream_width, stream_height = stream_size
@@ -83,73 +91,89 @@ def set_zoom(picam2, zoom_factor, stream_size):
     crop_y = (full_height - crop_height) / 2
     crop_region = (int(crop_x), int(crop_y), int(crop_width), int(crop_height))
     picam2.set_controls({"ScalerCrop": crop_region})
-    print(f"🔎 Đã thiết lập zoom kỹ thuật số: {zoom_factor}x")
+    logging.info(f"Đã thiết lập zoom kỹ thuật số: {zoom_factor}x")
+
+# <<< SỬA LỖI: Thêm hàm is_ip_address() đã bị thiếu >>>
+def is_ip_address(hostname):
+    """Kiểm tra xem một chuỗi có phải là định dạng IP hợp lệ không."""
+    parts = hostname.split('.')
+    if len(parts) != 4:
+        return False
+    for item in parts:
+        if not item.isdigit() or not 0 <= int(item) <= 255:
+            return False
+    return True
 
 def main():
-    global CALIBRATED_CENTER, CURRENT_ZOOM
+    setup_logging()
+    config = load_config()
+    shared_state = SharedState()
     
-    server_ip = resolve_hostname(SERVER_HOSTNAME)
-    server_mac_url = f"http://{server_ip}:5000"
+    # Tải cài đặt từ phiên trước
+    shared_state.current_zoom = config['saved_settings'].get('zoom', 1.0)
+    shared_state.calibrated_center = config['saved_settings'].get('center', None)
+
+    # <<< Logic kiểm tra IP/hostname đã được tinh chỉnh >>>
+    hostname = config['server']['hostname']
+    if not is_ip_address(hostname):
+        logging.info(f"Giá trị '{hostname}' không phải IP, tiến hành phân giải tên miền...")
+        server_ip = resolve_hostname(hostname)
+    else:
+        logging.info(f"Sử dụng địa chỉ IP tĩnh đã cấu hình: {hostname}")
+        server_ip = hostname
     
-    load_config()
-    Thread(target=report_initial_config, args=(server_mac_url,), daemon=True).start()
+    server_url = f"http://{server_ip}:{config['server']['port']}"
     
-    stream_width, stream_height = 480, 640
-    cam = Camera(width=stream_width, height=stream_height)
+    stream_cfg = config['camera']
+    cam = camera_module.Camera(width=stream_cfg['stream_width'], height=stream_cfg['stream_height'])
     
+    # --- Phần khởi tạo worker và vòng lặp chính (giữ nguyên) ---
     processing_queue = queue.Queue(maxsize=5)
     frame_queue = queue.Queue(maxsize=10)
     command_queue = queue.Queue(maxsize=5)
+    ring_buffer = deque(maxlen=2)
 
-    detector = ObjectDetector(model_path="my_modelv1.pt")
+    detector = detection_module.ObjectDetector(model_path=config['model']['path'])
     
-    # Khởi tạo các luồng
-    # <<< SỬA LỖI 3: Khởi tạo các luồng theo đúng thiết kế module >>>
-    processing_worker = ProcessingWorker(process_queue=processing_queue, detector=detector, server_url=server_mac_url)
-    sender_worker = SenderWorker(frame_queue=frame_queue, server_url=server_mac_url)
-    command_poller = CommandPoller(command_queue=command_queue, server_url=server_mac_url)
-    # TriggerListener cần được cung cấp queue và buffer
-    trigger_listener = TriggerListener(processing_queue=processing_queue, ring_buffer=RING_BUFFER)
+    workers = [
+        ProcessingWorker(processing_queue, detector, server_url, config, shared_state),
+        SenderWorker(frame_queue, server_url, shared_state),
+        CommandPoller(command_queue, server_url, shared_state),
+        TriggerListener(processing_queue, ring_buffer, config, shared_state)
+    ]
     
-    workers = [processing_worker, sender_worker, command_poller, trigger_listener]
     for worker in workers:
         worker.start()
 
     cam.start()
-    # <<< THÊM MỚI TẠI ĐÂY: Giai đoạn "Làm nóng" >>>
-    print("🔥 Đang làm nóng model AI... Vui lòng chờ.")
-    # Chụp một frame thật từ camera để có kích thước đúng
+    
+    logging.info("🔥 Đang làm nóng model AI... Vui lòng chờ.")
     dummy_frame = cam.capture_frame()
     if dummy_frame is not None:
-        # Thực hiện một lần nhận diện giả để tải model vào bộ nhớ
         detector.detect(dummy_frame)
-    print("✅ Model đã được làm nóng!")
-    # <<< KẾT THÚC PHẦN THÊM MỚI >>>
-    set_zoom(cam.picam2, CURRENT_ZOOM, (stream_width, stream_height))
+    logging.info("✅ Model đã được làm nóng!")
     
-    print("✅ Hệ thống đã sẵn sàng!")
-    play_event_sound(-1)
-    print("🎥 Bắt đầu livestream...")
+    set_zoom(cam.picam2, shared_state.current_zoom, (stream_cfg['stream_width'], stream_cfg['stream_height']))
     
-    last_status_print_time = 0
+    logging.info("✅ Hệ thống đã sẵn sàng!")
+    audio_manager.play_connected()
     
     try:
         while True:
-            # Vòng lặp chính giờ đây rất gọn gàng
             try:
                 command = command_queue.get_nowait()
                 if command.get('type') == 'center':
                     new_center = command.get('value')
                     if new_center:
-                        CALIBRATED_CENTER = { 'x': int(new_center.get('x')), 'y': int(new_center.get('y')) }
-                        print(f"🎯 Tâm ngắm đã được cập nhật thành: {CALIBRATED_CENTER}")
-                        save_config()
+                        shared_state.calibrated_center = { 'x': int(new_center['x']), 'y': int(new_center['y']) }
+                        logging.info(f"🎯 Tâm ngắm đã được cập nhật: {shared_state.calibrated_center}")
+                        save_runtime_settings(config, shared_state)
                 elif command.get('type') == 'zoom':
                     zoom_value = command.get('value')
                     if zoom_value:
-                        CURRENT_ZOOM = float(zoom_value)
-                        set_zoom(cam.picam2, CURRENT_ZOOM, (stream_width, stream_height))
-                        save_config()
+                        shared_state.current_zoom = float(zoom_value)
+                        set_zoom(cam.picam2, shared_state.current_zoom, (stream_cfg['stream_width'], stream_cfg['stream_height']))
+                        save_runtime_settings(config, shared_state)
             except queue.Empty:
                 pass
             
@@ -157,26 +181,22 @@ def main():
             if frame is None:
                 continue
             
-            RING_BUFFER.append(frame.copy())
+            ring_buffer.append(frame.copy())
 
-            center_to_draw = (CALIBRATED_CENTER['x'], CALIBRATED_CENTER['y']) if CALIBRATED_CENTER else (stream_width // 2, stream_height // 2)
-            cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
+            if shared_state.calibrated_center:
+                center_to_draw = (shared_state.calibrated_center['x'], shared_state.calibrated_center['y'])
+                cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
 
             _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             if not frame_queue.full():
                 frame_queue.put(jpg_buffer.tobytes())
             
-            current_time = time.time()
-            if current_time - last_status_print_time > 3:
-                print("Hệ thống đang hoạt động, chờ trigger Bluetooth...")
-                last_status_print_time = current_time
-            
             time.sleep(0.01)
                 
     except KeyboardInterrupt:
-        print("\n🛑 Thoát...")
+        logging.info("\n🛑 Nhận tín hiệu thoát...")
     finally:
-        print("Đang dừng các luồng phụ...")
+        logging.info("Đang dừng các luồng phụ...")
         for worker in workers:
             worker.stop()
         for worker in workers:
@@ -184,7 +204,7 @@ def main():
         
         cam.stop()
         cv2.destroyAllWindows()
-        print("Đã dọn dẹp và thoát.")
+        logging.info("Đã dọn dẹp và thoát chương trình.")
 
 if __name__ == '__main__':
     main()
