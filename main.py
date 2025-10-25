@@ -1,3 +1,6 @@
+#
+# ----- BẮT ĐẦU NỘI DUNG FILE: main.py -----
+#
 import sys
 import cv2
 import queue
@@ -10,7 +13,6 @@ from threading import Thread
 from collections import deque
 import requests
 
-# <<< TỐI ƯU: Import module thay vì class lẻ >>>
 from module import camera_module, detection_module
 from app import ProcessingWorker
 from threads.workers import SenderWorker, CommandPoller, TriggerListener
@@ -18,7 +20,6 @@ from utils.audio import audio_manager
 
 CONFIG_FILE = "config.json"
 
-# <<< TỐI ƯU: Tạo một lớp để quản lý trạng thái chia sẻ >>>
 class SharedState:
     def __init__(self):
         self.server_is_connected = True
@@ -26,7 +27,6 @@ class SharedState:
         self.current_zoom = 1.0
 
 def setup_logging():
-    """Thiết lập hệ thống logging tập trung."""
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s',
@@ -38,7 +38,6 @@ def setup_logging():
     logging.info("Hệ thống logging đã được khởi tạo.")
 
 def load_config():
-    """Tải toàn bộ cấu hình từ file JSON."""
     try:
         with open(CONFIG_FILE, 'r') as f:
             config = json.load(f)
@@ -52,7 +51,6 @@ def load_config():
         sys.exit(1)
 
 def save_runtime_settings(config, shared_state):
-    """Lưu các cài đặt thay đổi trong lúc chạy (zoom, center)."""
     config['saved_settings']['zoom'] = shared_state.current_zoom
     config['saved_settings']['center'] = shared_state.calibrated_center
     try:
@@ -63,7 +61,6 @@ def save_runtime_settings(config, shared_state):
         logging.error(f"Lỗi khi lưu file cấu hình: {e}")
 
 def resolve_hostname(hostname):
-    """Phân giải hostname thành địa chỉ IP, thử lại nếu thất bại."""
     logging.info(f"Đang phân giải hostname '{hostname}'...")
     while True:
         try:
@@ -74,28 +71,18 @@ def resolve_hostname(hostname):
             logging.warning(f"Không thể phân giải hostname. Thử lại sau 5 giây...")
             time.sleep(5)
 
-def set_zoom(picam2, zoom_factor, stream_size):
-    """Thiết lập zoom kỹ thuật số cho camera."""
-    if zoom_factor < 1.0: zoom_factor = 1.0
-    full_width, full_height = picam2.camera_properties['PixelArraySize']
-    stream_width, stream_height = stream_size
-    target_aspect_ratio = stream_width / stream_height
-    crop_width = full_width / zoom_factor
-    crop_height = full_height / zoom_factor
-    new_crop_width = crop_height * target_aspect_ratio
-    if new_crop_width <= crop_width:
-        crop_width = new_crop_width
+# [THAY ĐỔI] Hàm này giờ sẽ gọi phương thức của đối tượng camera
+def set_zoom(cam_obj, zoom_factor):
+    """
+    Thiết lập zoom kỹ thuật số bằng cách gọi phương thức trong đối tượng Camera.
+    """
+    if hasattr(cam_obj, 'set_zoom'):
+        cam_obj.set_zoom(zoom_factor)
+        logging.info(f"Đã gửi lệnh zoom {zoom_factor}x đến camera module.")
     else:
-        crop_height = crop_width / target_aspect_ratio
-    crop_x = (full_width - crop_width) / 2
-    crop_y = (full_height - crop_height) / 2
-    crop_region = (int(crop_x), int(crop_y), int(crop_width), int(crop_height))
-    picam2.set_controls({"ScalerCrop": crop_region})
-    logging.info(f"Đã thiết lập zoom kỹ thuật số: {zoom_factor}x")
+        logging.warning("Đối tượng camera hiện tại không hỗ trợ hàm set_zoom.")
 
-# <<< SỬA LỖI: Thêm hàm is_ip_address() đã bị thiếu >>>
 def is_ip_address(hostname):
-    """Kiểm tra xem một chuỗi có phải là định dạng IP hợp lệ không."""
     parts = hostname.split('.')
     if len(parts) != 4:
         return False
@@ -109,25 +96,23 @@ def main():
     config = load_config()
     shared_state = SharedState()
     
-    # Tải cài đặt từ phiên trước
     shared_state.current_zoom = config['saved_settings'].get('zoom', 1.0)
     shared_state.calibrated_center = config['saved_settings'].get('center', None)
 
-    # <<< Logic kiểm tra IP/hostname đã được tinh chỉnh >>>
     hostname = config['server']['hostname']
     if not is_ip_address(hostname):
-        logging.info(f"Giá trị '{hostname}' không phải IP, tiến hành phân giải tên miền...")
         server_ip = resolve_hostname(hostname)
     else:
-        logging.info(f"Sử dụng địa chỉ IP tĩnh đã cấu hình: {hostname}")
         server_ip = hostname
     
     server_url = f"http://{server_ip}:{config['server']['port']}"
     
     stream_cfg = config['camera']
-    cam = camera_module.Camera(width=stream_cfg['stream_width'], height=stream_cfg['stream_height'])
+    cam = camera_module.Camera(
+        stream_width=stream_cfg['stream_width'], 
+        stream_height=stream_cfg['stream_height']
+    )
     
-    # --- Phần khởi tạo worker và vòng lặp chính (giữ nguyên) ---
     processing_queue = queue.Queue(maxsize=5)
     frame_queue = queue.Queue(maxsize=10)
     command_queue = queue.Queue(maxsize=5)
@@ -147,13 +132,17 @@ def main():
 
     cam.start()
     
-    logging.info("🔥 Đang làm nóng model AI... Vui lòng chờ.")
-    dummy_frame = cam.capture_frame()
-    if dummy_frame is not None:
-        detector.detect(dummy_frame)
+    logging.info("🔥 Đang chờ khung hình đầu tiên từ webcam để làm nóng model...")
+    dummy_frame = None
+    while dummy_frame is None:
+        dummy_frame = cam.capture_frame()
+        time.sleep(0.5)
+
+    detector.detect(dummy_frame)
     logging.info("✅ Model đã được làm nóng!")
     
-    set_zoom(cam.picam2, shared_state.current_zoom, (stream_cfg['stream_width'], stream_cfg['stream_height']))
+    # [THAY ĐỔI] Áp dụng mức zoom đã lưu lúc khởi động
+    set_zoom(cam, shared_state.current_zoom)
     
     logging.info("✅ Hệ thống đã sẵn sàng!")
     audio_manager.play_connected()
@@ -172,13 +161,15 @@ def main():
                     zoom_value = command.get('value')
                     if zoom_value:
                         shared_state.current_zoom = float(zoom_value)
-                        set_zoom(cam.picam2, shared_state.current_zoom, (stream_cfg['stream_width'], stream_cfg['stream_height']))
+                        # [THAY ĐỔI] Gọi hàm set_zoom mới
+                        set_zoom(cam, shared_state.current_zoom)
                         save_runtime_settings(config, shared_state)
             except queue.Empty:
                 pass
             
             frame = cam.capture_frame()
             if frame is None:
+                time.sleep(0.1)
                 continue
             
             ring_buffer.append(frame.copy())
@@ -208,3 +199,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+#
+# ----- KẾT THÚC NỘI DUNG FILE: main.py -----
+#

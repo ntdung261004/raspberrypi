@@ -7,7 +7,7 @@ from threading import Thread
 
 # Import các module chức năng
 from utils.processing import check_object_center
-from utils.handles import handle_hit_bia_so_4, handle_hit_bia_so_7, handle_hit_bia_so_8, handle_miss
+from utils.handles import handle_hit_bia_so_4b, handle_hit_bia_so_4c, handle_miss
 
 class ProcessingWorker(Thread):
     # <<< TỐI ƯU: Nhận config và shared_state từ main >>>
@@ -33,20 +33,16 @@ class ProcessingWorker(Thread):
         
         # <<< TỐI ƯU: Thêm try-except để kiểm tra file tồn tại >>>
         try:
-            self.original_img_bia4 = cv2.imread(paths['original_bia4'])
-            self.mask_bia4 = cv2.imread(paths['mask_bia4'], cv2.IMREAD_GRAYSCALE)
-            self.original_img_bia4_alt = cv2.imread(paths['original_bia4_alt'])
+            self.original_img_bia4b = cv2.imread(paths['original_bia4b'])
+            self.mask_bia4b = cv2.imread(paths['mask_bia4b'], cv2.IMREAD_GRAYSCALE)
+            self.original_img_bia4b_alt = cv2.imread(paths['original_bia4b_alt'])
             # ... Tương tự cho các bia khác
-            self.original_img_bia7 = cv2.imread(paths['original_bia7'])
-            self.mask_bia7 = cv2.imread(paths['mask_bia7'], cv2.IMREAD_GRAYSCALE)
-            self.original_img_bia7_alt = cv2.imread(paths['original_bia7_alt'])
-            self.original_img_bia8 = cv2.imread(paths['original_bia8'])
-            self.mask_bia8 = cv2.imread(paths['mask_bia8'], cv2.IMREAD_GRAYSCALE)
-            self.original_img_bia8_alt = cv2.imread(paths['original_bia8_alt'])
-            
+            self.original_img_bia4c = cv2.imread(paths['original_bia4c'])
+            self.mask_bia4c = cv2.imread(paths['mask_bia4c'], cv2.IMREAD_GRAYSCALE)
+            self.original_img_bia4c_alt = cv2.imread(paths['original_bia4c_alt'])
             # Kiểm tra nếu bất kỳ file nào không tải được
-            if self.original_img_bia4 is None or self.mask_bia4 is None:
-                raise FileNotFoundError("Một hoặc nhiều file tài nguyên cho bia 4 không tồn tại.")
+            if self.original_img_bia4b is None or self.mask_bia4b is None:
+                raise FileNotFoundError("Một hoặc nhiều file tài nguyên cho bia 4b không tồn tại.")
         except Exception as e:
             logging.error(f"Lỗi nghiêm trọng khi tải tài nguyên: {e}. Vui lòng kiểm tra đường dẫn trong config.json.")
             # Có thể thoát chương trình ở đây nếu tài nguyên là bắt buộc
@@ -85,12 +81,10 @@ class ProcessingWorker(Thread):
         
         if status == "TRÚNG":
             target_name = hit_info.get('name')
-            if target_name == 'bia_so_4':
-                result_data = handle_hit_bia_so_4(hit_info, capture_time, frame, self.original_img_bia4, self.original_img_bia4_alt, self.mask_bia4)
-            elif target_name == 'bia_so_7_8':
-                result_data = handle_hit_bia_so_7(hit_info, capture_time, frame, self.original_img_bia7, self.original_img_bia7_alt, self.mask_bia7)
-            elif target_name == 'bia_so_8':
-                result_data = handle_hit_bia_so_8(hit_info, capture_time, frame, self.original_img_bia8, self.original_img_bia8_alt, self.mask_bia8)
+            if target_name == 'bia_4b':
+                result_data = handle_hit_bia_so_4b(hit_info, capture_time, frame, self.original_img_bia4b, self.original_img_bia4b_alt, self.mask_bia4b)
+            elif target_name == 'bia_4c':
+                result_data = handle_hit_bia_so_4c(hit_info, capture_time, frame, self.original_img_bia4c, self.original_img_bia4c_alt, self.mask_bia4c)
             else:
                 print(f"Phát hiện trúng mục tiêu không xác định: {target_name}")
                 result_data = handle_miss(hit_info, capture_time, frame)

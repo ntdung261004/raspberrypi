@@ -8,28 +8,25 @@
         "stream_height": 640
     },
     "model": {
-        "path": "my_modelv8s.pt",
-        "confidence": 0.9
+        "path": "K54v3.pt",
+        "confidence": 0.5
     },
     "trigger": {
         "device_keyword": "AB Shutter3"
     },
     "resource_paths": {
-        "original_bia4": "images/original/bia_so_4.png",
-        "original_bia4_alt": "images/original/bia_so_4_1.png",
-        "mask_bia4": "images/mask/mask_bia_so_4.png",
-        "original_bia7": "images/original/bia_so_7.png",
-        "original_bia7_alt": "images/original/bia_so_7_1.png",
-        "mask_bia7": "images/mask/mask_bia_so_7.png",
-        "original_bia8": "images/original/bia_so_8.png",
-        "original_bia8_alt": "images/original/bia_so_8_1.png",
-        "mask_bia8": "images/mask/mask_bia_so_8.png"
+        "original_bia4b": "images/original/bia_4b.png",
+        "original_bia4b_alt": "images/original/warp_bia_4b.png",
+        "mask_bia4b": "images/mask/mask_4b.png",
+        "original_bia4c": "images/original/bia_4c.png",
+        "original_bia4c_alt": "images/original/warp_bia_4c.png",
+        "mask_bia4c": "images/mask/mask_4c.png"
     },
     "saved_settings": {
-        "zoom": 1.5,
+        "zoom": 1.7,
         "center": {
-            "x": 323,
-            "y": 185
+            "x": 250,
+            "y": 333
         }
     }
 }
