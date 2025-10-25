@@ -7,10 +7,9 @@ import logging
 from evdev import ecodes
 from datetime import datetime
 
-from utils.audio import audio_manager 
+from utils.audio import audio_manager
 
 class SenderWorker(Thread):
-    # <<< TỐI ƯU: Nhận server_url và shared_state >>>
     def __init__(self, frame_queue, server_url, shared_state):
         super().__init__()
         self.setName('SenderWorker')
@@ -19,21 +18,31 @@ class SenderWorker(Thread):
         self.shared_state = shared_state
         self.daemon = True
         self.running = True
+        # [TỐI ƯU] Tạo một session duy nhất để tái sử dụng kết nối
+        self.session = requests.Session()
+        logging.info("SenderWorker đã khởi tạo với requests.Session.")
 
     def run(self):
         while self.running:
             try:
-                # <<< TỐI ƯU: Kiểm tra trạng thái kết nối qua shared_state >>>
                 if not self.shared_state.server_is_connected:
                     time.sleep(1)
                     continue
 
                 jpg_buffer = self.frame_queue.get(timeout=1)
                 try:
-                    requests.post(f"{self.server_url}/video_upload", data=jpg_buffer, headers={'Content-Type': 'image/jpeg'}, timeout=(0.5, 2))
-                except requests.exceptions.RequestException:
+                    # [TỐI ƯU] Sử dụng self.session.post thay vì requests.post
+                    # Timeout được điều chỉnh hợp lý hơn cho việc gửi dữ liệu
+                    self.session.post(
+                        f"{self.server_url}/video_upload",
+                        data=jpg_buffer,
+                        headers={'Content-Type': 'image/jpeg'},
+                        timeout=2 # Đặt timeout tổng là 2 giây
+                    )
+                except requests.exceptions.RequestException as e:
                     if self.shared_state.server_is_connected:
-                        logging.warning("SENDER: Mất kết nối khi gửi video.")
+                        # Log lỗi cụ thể hơn để dễ gỡ rối
+                        logging.warning(f"SENDER: Mất kết nối khi gửi video. Lỗi: {e}")
                         self.shared_state.server_is_connected = False
                 finally:
                     self.frame_queue.task_done()
@@ -42,6 +51,8 @@ class SenderWorker(Thread):
                 
     def stop(self):
         self.running = False
+        self.session.close() # [TỐI ƯU] Đóng session khi luồng kết thúc
+        logging.info("SenderWorker đã dừng và đóng session.")
 
 class CommandPoller(Thread):
     def __init__(self, command_queue, server_url, shared_state):
@@ -53,16 +64,19 @@ class CommandPoller(Thread):
         self.daemon = True
         self.running = True
         self.last_server_heartbeat = 0
+        # [TỐI ƯU] Sử dụng session riêng cho việc hỏi lệnh
+        self.session = requests.Session()
 
     def run(self):
         while self.running:
             try:
-                response = requests.get(f"{self.server_url}/get_command", timeout=2.0)
+                # [TỐI ƯU] Sử dụng self.session.get
+                response = self.session.get(f"{self.server_url}/get_command", timeout=2.0)
                 if response.status_code == 200:
                     data = response.json()
-                    if data.get('timestamp'): # Server is alive
+                    if data.get('timestamp'): 
                         if not self.shared_state.server_is_connected:
-                            logging.info("✅ Khôi phục kết nối tới server!")
+                            logging.info("✅ POLLER: Khôi phục kết nối tới server!")
                         self.shared_state.server_is_connected = True
                         self.last_server_heartbeat = time.time()
                     
@@ -76,10 +90,13 @@ class CommandPoller(Thread):
                         logging.warning("POLLER: Mất kết nối tới server.")
                         self.shared_state.server_is_connected = False
             
-            time.sleep(5) # Giảm thời gian sleep để phản hồi nhanh hơn
+            # [TỐI ƯU] Giảm thời gian chờ xuống để phản ứng nhanh hơn với việc mất kết nối
+            time.sleep(2) 
             
     def stop(self):
         self.running = False
+        self.session.close()
+        logging.info("CommandPoller đã dừng và đóng session.")
 
 class TriggerListener(Thread):
     def __init__(self, processing_queue, ring_buffer, config, shared_state):
@@ -91,7 +108,6 @@ class TriggerListener(Thread):
         self.daemon = True
         self.running = True
         self.device = None
-        # <<< TỐI ƯU: Đọc tên thiết bị từ config >>>
         self.device_name_keyword = config['trigger']['device_keyword']
 
     def find_trigger_device(self):
@@ -116,11 +132,10 @@ class TriggerListener(Thread):
                          self.device.grab()
                          logging.info(f"Đã giành quyền kiểm soát '{self.device.name}'. Bắt đầu lắng nghe...")
 
-                # <<< TỐI ƯU: Sử dụng read_loop để không bị block mãi mãi >>>
                 for event in self.device.read_loop():
-                    if not self.running: break # Cho phép thoát vòng lặp khi stop() được gọi
+                    if not self.running: break
                     
-                    if event.type == ecodes.EV_KEY and event.code == ecodes.KEY_VOLUMEDOWN and event.value == 1: # Nút bấm xuống
+                    if event.type == ecodes.EV_KEY and event.code == ecodes.KEY_VOLUMEUP and event.value == 1:
                         audio_manager.play_shot() 
                         capture_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         logging.info(f"📸 (BT Trigger) Nhận tín hiệu lúc {capture_time}")
@@ -139,7 +154,6 @@ class TriggerListener(Thread):
                 self.device = None
                 time.sleep(2)
         
-        # Giải phóng thiết bị khi dừng
         if self.device:
             try:
                 self.device.ungrab()

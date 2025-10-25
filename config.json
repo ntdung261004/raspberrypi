@@ -26,10 +26,10 @@
         "mask_bia8": "images/mask/mask_bia_so_8.png"
     },
     "saved_settings": {
-        "zoom": 1.5,
+        "zoom": 1.4,
         "center": {
-            "x": 323,
-            "y": 185
+            "x": 255,
+            "y": 328
         }
     }
 }
