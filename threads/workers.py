@@ -1,5 +1,3 @@
-# threads/workers.py
-
 from threading import Thread
 import queue
 import time
@@ -8,18 +6,8 @@ import evdev
 import logging
 from evdev import ecodes
 from datetime import datetime
-import base64
-
-# <<< BẮT ĐẦU PHẦN THÊM MỚI >>>
-# 1. Import thư viện socketio client
-import socketio
-# <<< KẾT THÚC PHẦN THÊM MỚI >>>
 
 from utils.audio import audio_manager
-
-# =======================================================================
-# === SENDERWORKER ĐƯỢC VIẾT LẠI HOÀN TOÀN ĐỂ DÙNG WEBSOCKET ===
-# =======================================================================
 
 class SenderWorker(Thread):
     def __init__(self, frame_queue, server_url, shared_state):
@@ -30,89 +18,41 @@ class SenderWorker(Thread):
         self.shared_state = shared_state
         self.daemon = True
         self.running = True
-        
-        # 2. Khởi tạo Socket.IO client thay vì requests.Session
-        self.sio = socketio.Client(reconnection_delay_max=5, logger=False, engineio_logger=False)
-        self.is_connected = False
-
-        # --- Định nghĩa các hàm xử lý sự kiện cho client ---
-        @self.sio.event
-        def connect():
-            logging.info("✅ SENDER: Đã kết nối thành công tới server qua WebSocket!")
-            self.is_connected = True
-            self.shared_state.server_is_connected = True
-
-        @self.sio.event
-        def connect_error(data):
-            # Chỉ log lỗi khi đang ở trạng thái kết nối để tránh spam log
-            if self.is_connected:
-                logging.error(f"❌ SENDER: Lỗi kết nối WebSocket: {data}")
-            self.is_connected = False
-            self.shared_state.server_is_connected = False
-
-        @self.sio.event
-        def disconnect():
-            logging.warning("⚠️ SENDER: Đã mất kết nối WebSocket tới server. Đang thử kết nối lại...")
-            self.is_connected = False
-            self.shared_state.server_is_connected = False
-
-    def _connect_to_server(self):
-        """Vòng lặp chạy nền để cố gắng kết nối đến server."""
-        while self.running and not self.is_connected:
-            try:
-                logging.info(f"SENDER: Đang thử kết nối WebSocket tới {self.server_url}...")
-                self.sio.connect(self.server_url, transports=['websocket'])
-                # Đợi một chút để kết nối được thiết lập hoàn toàn
-                self.sio.sleep(1)
-            except Exception as e:
-                logging.warning(f"SENDER: Không thể kết nối, thử lại sau 3 giây... Lỗi: {e}")
-                self.sio.sleep(3)
+        # [TỐI ƯU] Tạo một session duy nhất để tái sử dụng kết nối
+        self.session = requests.Session()
+        logging.info("SenderWorker đã khởi tạo với requests.Session.")
 
     def run(self):
-        self._connect_to_server() # Bắt đầu quá trình kết nối
-        
-        last_heartbeat_time = 0
         while self.running:
-            if not self.is_connected:
-                # Nếu mất kết nối, client sẽ tự động thử kết nối lại.
-                # Luồng này chỉ cần đợi.
-                self.sio.sleep(1)
-                continue
-
             try:
-                # Lấy khung hình đã nén JPEG từ hàng đợi
+                if not self.shared_state.server_is_connected:
+                    time.sleep(1)
+                    continue
+
                 jpg_buffer = self.frame_queue.get(timeout=1)
-                
-                # 3. Mã hóa dữ liệu ảnh sang Base64 để gửi qua WebSocket
-                b64_string = base64.b64encode(jpg_buffer).decode('utf-8')
-                
-                # 4. Gửi khung hình qua sự kiện 'pi_stream'
-                self.sio.emit('pi_stream', {'image': b64_string})
-
-                # 5. Gửi "nhịp tim" (heartbeat) mỗi 2 giây để server biết Pi vẫn còn sống
-                current_time = time.time()
-                if current_time - last_heartbeat_time > 2:
-                    self.sio.emit('pi_heartbeat', {'timestamp': current_time})
-                    last_heartbeat_time = current_time
-
+                try:
+                    # [TỐI ƯU] Sử dụng self.session.post thay vì requests.post
+                    # Timeout được điều chỉnh hợp lý hơn cho việc gửi dữ liệu
+                    self.session.post(
+                        f"{self.server_url}/video_upload",
+                        data=jpg_buffer,
+                        headers={'Content-Type': 'image/jpeg'},
+                        timeout=2 # Đặt timeout tổng là 2 giây
+                    )
+                except requests.exceptions.RequestException as e:
+                    if self.shared_state.server_is_connected:
+                        # Log lỗi cụ thể hơn để dễ gỡ rối
+                        logging.warning(f"SENDER: Mất kết nối khi gửi video. Lỗi: {e}")
+                        self.shared_state.server_is_connected = False
+                finally:
+                    self.frame_queue.task_done()
             except queue.Empty:
-                # Hàng đợi rỗng là chuyện bình thường, không cần log lỗi
                 continue
-            except Exception as e:
-                logging.error(f"SENDER: Lỗi trong vòng lặp chính: {e}")
-                self.sio.sleep(1)
-
-        # Dọn dẹp khi luồng dừng lại
-        if self.is_connected:
-            self.sio.disconnect()
-        logging.info("SenderWorker đã dừng.")
-
+                
     def stop(self):
         self.running = False
-
-# =======================================================================
-# === CÁC LỚP WORKER KHÁC ĐƯỢC GIỮ NGUYÊN, KHÔNG THAY ĐỔI ===
-# =======================================================================
+        self.session.close() # [TỐI ƯU] Đóng session khi luồng kết thúc
+        logging.info("SenderWorker đã dừng và đóng session.")
 
 class CommandPoller(Thread):
     def __init__(self, command_queue, server_url, shared_state):
@@ -124,11 +64,13 @@ class CommandPoller(Thread):
         self.daemon = True
         self.running = True
         self.last_server_heartbeat = 0
+        # [TỐI ƯU] Sử dụng session riêng cho việc hỏi lệnh
         self.session = requests.Session()
 
     def run(self):
         while self.running:
             try:
+                # [TỐI ƯU] Sử dụng self.session.get
                 response = self.session.get(f"{self.server_url}/get_command", timeout=2.0)
                 if response.status_code == 200:
                     data = response.json()
@@ -148,6 +90,7 @@ class CommandPoller(Thread):
                         logging.warning("POLLER: Mất kết nối tới server.")
                         self.shared_state.server_is_connected = False
             
+            # [TỐI ƯU] Giảm thời gian chờ xuống để phản ứng nhanh hơn với việc mất kết nối
             time.sleep(2) 
             
     def stop(self):
