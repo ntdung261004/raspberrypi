@@ -84,7 +84,7 @@ def handle_hit_bia_so_4c(hit_info, capture_time, original_frame,
     
     if warped_img is not None and transformed_point is not None:
         print("✅ Warp (ảnh 1) thành công. Đang tính điểm...")
-        score = calculate_score_bia4b(transformed_point, original_img_bia4c, mask_bia4c)
+        score = calculate_score_bia4c(transformed_point, original_img_bia4c, mask_bia4c)
         cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), 
                        (0, 0, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu đỏ: thành công ở lần 1
     else:

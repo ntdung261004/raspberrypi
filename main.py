@@ -1,5 +1,5 @@
 #
-# ----- BẮT ĐẦU NỘI DUNG FILE: main.py -----
+# ----- BẮT ĐẦU NỘI DUNG FILE: main.py (ĐÃ SỬA) -----
 #
 import sys
 import cv2
@@ -15,7 +15,8 @@ import requests
 
 from module import camera_module, detection_module
 from app import ProcessingWorker
-from threads.workers import SenderWorker, CommandPoller, TriggerListener
+# [THAY ĐỔI 1] Import thêm ConfigReporter
+from threads.workers import SenderWorker, CommandPoller, TriggerListener, ConfigReporter
 from utils.audio import audio_manager
 
 CONFIG_FILE = "config.json"
@@ -71,7 +72,6 @@ def resolve_hostname(hostname):
             logging.warning(f"Không thể phân giải hostname. Thử lại sau 5 giây...")
             time.sleep(5)
 
-# [THAY ĐỔI] Hàm này giờ sẽ gọi phương thức của đối tượng camera
 def set_zoom(cam_obj, zoom_factor):
     """
     Thiết lập zoom kỹ thuật số bằng cách gọi phương thức trong đối tượng Camera.
@@ -120,11 +120,13 @@ def main():
 
     detector = detection_module.ObjectDetector(model_path=config['model']['path'])
     
+    # [THAY ĐỔI 2] Thêm ConfigReporter vào danh sách workers
     workers = [
         ProcessingWorker(processing_queue, detector, server_url, config, shared_state),
         SenderWorker(frame_queue, server_url, shared_state),
         CommandPoller(command_queue, server_url, shared_state),
-        TriggerListener(processing_queue, ring_buffer, config, shared_state)
+        TriggerListener(processing_queue, ring_buffer, config, shared_state),
+        ConfigReporter(server_url, config, shared_state) # <--- DÒNG MỚI
     ]
     
     for worker in workers:
@@ -141,7 +143,6 @@ def main():
     detector.detect(dummy_frame)
     logging.info("✅ Model đã được làm nóng!")
     
-    # [THAY ĐỔI] Áp dụng mức zoom đã lưu lúc khởi động
     set_zoom(cam, shared_state.current_zoom)
     
     logging.info("✅ Hệ thống đã sẵn sàng!")
@@ -161,7 +162,6 @@ def main():
                     zoom_value = command.get('value')
                     if zoom_value:
                         shared_state.current_zoom = float(zoom_value)
-                        # [THAY ĐỔI] Gọi hàm set_zoom mới
                         set_zoom(cam, shared_state.current_zoom)
                         save_runtime_settings(config, shared_state)
             except queue.Empty:

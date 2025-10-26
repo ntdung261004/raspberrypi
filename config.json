@@ -8,7 +8,7 @@
         "stream_height": 640
     },
     "model": {
-        "path": "K54v3.pt",
+        "path": "K54v2.pt",
         "confidence": 0.5
     },
     "trigger": {
@@ -23,7 +23,7 @@
         "mask_bia4c": "images/mask/mask_4c.png"
     },
     "saved_settings": {
-        "zoom": 1.4,
+        "zoom": 1.0,
         "center": {
             "x": 250,
             "y": 333
