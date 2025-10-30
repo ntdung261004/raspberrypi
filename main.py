@@ -1,6 +1,5 @@
-#
-# ----- BẮT ĐẦU NỘI DUNG FILE: main.py (ĐÃ SỬA) -----
-#
+# main.py
+
 import sys
 import cv2
 import queue
@@ -72,9 +71,6 @@ def resolve_hostname(hostname):
             time.sleep(5)
 
 def set_zoom(cam_obj, zoom_factor):
-    """
-    Thiết lập zoom kỹ thuật số bằng cách gọi phương thức trong đối tượng Camera.
-    """
     if hasattr(cam_obj, 'set_zoom'):
         cam_obj.set_zoom(zoom_factor)
         logging.info(f"Đã gửi lệnh zoom {zoom_factor}x đến camera module.")
@@ -94,31 +90,27 @@ def main():
     setup_logging()
     config = load_config()
     shared_state = SharedState()
-    
+
     shared_state.current_zoom = config['saved_settings'].get('zoom', 1.0)
     shared_state.calibrated_center = config['saved_settings'].get('center', None)
 
     hostname = config['server']['hostname']
-    if not is_ip_address(hostname):
-        server_ip = resolve_hostname(hostname)
-    else:
-        server_ip = hostname
-    
+    server_ip = resolve_hostname(hostname) if not is_ip_address(hostname) else hostname
     server_url = f"http://{server_ip}:{config['server']['port']}"
-    
+
     stream_cfg = config['camera']
     cam = camera_module.Camera(
-        stream_width=stream_cfg['stream_width'], 
+        stream_width=stream_cfg['stream_width'],
         stream_height=stream_cfg['stream_height']
     )
-    
+
     processing_queue = queue.Queue(maxsize=5)
     frame_queue = queue.Queue(maxsize=10)
     command_queue = queue.Queue(maxsize=5)
     ring_buffer = deque(maxlen=2)
 
     detector = detection_module.ObjectDetector(model_path=config['model']['path'])
-    
+
     workers = [
         ProcessingWorker(processing_queue, detector, server_url, config, shared_state),
         SenderWorker(frame_queue, server_url, shared_state),
@@ -126,12 +118,12 @@ def main():
         TriggerListener(processing_queue, ring_buffer, config, shared_state),
         ConfigReporter(server_url, config, shared_state)
     ]
-    
+
     for worker in workers:
         worker.start()
 
     cam.start()
-    
+
     logging.info("🔥 Đang chờ khung hình đầu tiên từ webcam để làm nóng model...")
     dummy_frame = None
     while dummy_frame is None:
@@ -140,14 +132,22 @@ def main():
 
     detector.detect(dummy_frame)
     logging.info("✅ Model đã được làm nóng!")
-    
     set_zoom(cam, shared_state.current_zoom)
-    
     logging.info("✅ Hệ thống đã sẵn sàng!")
     audio_manager.play_connected()
-    
+
+    # <<< BẮT ĐẦU TỐI ƯU FPS VÀ CHẤT LƯỢNG ẢNH >>>
+    TARGET_FPS = 25  # Mục tiêu 25 khung hình/giây
+    FRAME_TIME = 1.0 / TARGET_FPS
+    JPEG_QUALITY = 45 # Giảm nhẹ chất lượng để tiết kiệm băng thông
+
+    logging.info(f"🚀 Tối ưu luồng video: Mục tiêu {TARGET_FPS} FPS, Chất lượng JPEG {JPEG_QUALITY}")
+    # <<< KẾT THÚC TỐI ƯU FPS VÀ CHẤT LƯỢNG ẢNH >>>
+
     try:
         while True:
+            start_time = time.time() # Ghi lại thời điểm bắt đầu vòng lặp
+
             try:
                 command = command_queue.get_nowait()
                 if command.get('type') == 'center':
@@ -164,29 +164,30 @@ def main():
                         save_runtime_settings(config, shared_state)
             except queue.Empty:
                 pass
-            
+
             frame = cam.capture_frame()
             if frame is None:
                 time.sleep(0.1)
                 continue
-            
+
             ring_buffer.append(frame.copy())
 
             if shared_state.calibrated_center:
                 center_to_draw = (shared_state.calibrated_center['x'], shared_state.calibrated_center['y'])
-                
-                # [THAY ĐỔI] Vẽ hồng tâm mới tinh tế hơn
-                # 1. Vẽ vòng tròn trắng bên ngoài
-                cv2.circle(frame, center_to_draw, 16, (255, 255, 255), 1) 
-                # 2. Vẽ dấu thập đỏ nhỏ bên trong
+                cv2.circle(frame, center_to_draw, 16, (255, 255, 255), 1)
                 cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2)
 
-            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            # Sử dụng chất lượng JPEG đã được tối ưu
+            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
             if not frame_queue.full():
                 frame_queue.put(jpg_buffer.tobytes())
-            
-            time.sleep(0.01)
-                
+
+            # Điều tiết vòng lặp để đạt được TARGET_FPS
+            elapsed_time = time.time() - start_time
+            sleep_time = FRAME_TIME - elapsed_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
     except KeyboardInterrupt:
         logging.info("\n🛑 Nhận tín hiệu thoát...")
     finally:
@@ -195,13 +196,9 @@ def main():
             worker.stop()
         for worker in workers:
             worker.join()
-        
         cam.stop()
         cv2.destroyAllWindows()
         logging.info("Đã dọn dẹp và thoát chương trình.")
 
 if __name__ == '__main__':
     main()
-#
-# ----- KẾT THÚC NỘI DUNG FILE: main.py -----
-#
