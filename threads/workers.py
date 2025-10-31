@@ -9,6 +9,66 @@ from datetime import datetime
 
 from utils.audio import audio_manager
 
+# =================================================================
+# [MỚI] Luồng gửi cấu hình đến Server
+# =================================================================
+class ConfigReporter(Thread):
+    def __init__(self, server_url, config_data, shared_state):
+        super().__init__()
+        self.setName('ConfigReporter')
+        self.server_url = server_url
+        self.shared_state = shared_state
+        self.daemon = True
+        self.running = True
+        self.session = requests.Session()
+        self.reported = False
+
+        # Ưu tiên lấy cấu hình từ 'saved_settings' trước
+        saved_settings = config_data.get('saved_settings', {})
+        camera_settings = config_data.get('camera', {})
+
+        self.config_to_report = {
+            'zoom': saved_settings.get('zoom', camera_settings.get('zoom', 1.0)),
+            'center': saved_settings.get('center', camera_settings.get('center', None))
+        }
+
+    def run(self):
+        logging.info("ConfigReporter bắt đầu hoạt động.")
+        time.sleep(1) # Chờ một chút để các luồng khác ổn định
+        while self.running:
+            try:
+                if self.shared_state.server_is_connected and not self.reported:
+                    logging.info(f"Đang gửi cấu hình lên server: {self.config_to_report}")
+                    self.session.post(
+                        f"{self.server_url}/report_config",
+                        json=self.config_to_report,
+                        timeout=3
+                    )
+                    self.reported = True
+                    logging.info("✅ Gửi cấu hình thành công!")
+
+                elif not self.shared_state.server_is_connected:
+                    if self.reported:
+                        logging.info("Mất kết nối server, sẵn sàng gửi lại cấu hình khi có kết nối.")
+                    self.reported = False
+
+                time.sleep(5)
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"CONFIG_REPORTER: Lỗi khi gửi cấu hình: {e}")
+                self.reported = False
+                time.sleep(5)
+            except Exception as e:
+                logging.error(f"CONFIG_REPORTER: Lỗi không xác định: {e}")
+                time.sleep(10)
+
+    def stop(self):
+        self.running = False
+        if self.session:
+            self.session.close()
+        logging.info("ConfigReporter đã dừng.")
+
+# =================================================================
+
 class SenderWorker(Thread):
     def __init__(self, frame_queue, server_url, shared_state):
         super().__init__()

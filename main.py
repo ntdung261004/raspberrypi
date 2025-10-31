@@ -13,7 +13,8 @@ import requests
 # <<< TỐI ƯU: Import module thay vì class lẻ >>>
 from module import camera_module, detection_module
 from app import ProcessingWorker
-from threads.workers import SenderWorker, CommandPoller, TriggerListener
+# [THAY ĐỔI 1] Import thêm ConfigReporter
+from threads.workers import SenderWorker, CommandPoller, TriggerListener, ConfigReporter
 from utils.audio import audio_manager
 
 CONFIG_FILE = "config.json"
@@ -135,11 +136,13 @@ def main():
 
     detector = detection_module.ObjectDetector(model_path=config['model']['path'])
     
+    # [THAY ĐỔI 2] Thêm ConfigReporter vào danh sách workers
     workers = [
         ProcessingWorker(processing_queue, detector, server_url, config, shared_state),
         SenderWorker(frame_queue, server_url, shared_state),
         CommandPoller(command_queue, server_url, shared_state),
-        TriggerListener(processing_queue, ring_buffer, config, shared_state)
+        TriggerListener(processing_queue, ring_buffer, config, shared_state),
+        ConfigReporter(server_url, config, shared_state) # <--- DÒNG MỚI
     ]
     
     for worker in workers:
@@ -185,7 +188,11 @@ def main():
 
             if shared_state.calibrated_center:
                 center_to_draw = (shared_state.calibrated_center['x'], shared_state.calibrated_center['y'])
-                cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
+                # [THAY ĐỔI] Vẽ hồng tâm mới tinh tế hơn
+                # 1. Vẽ vòng tròn trắng bên ngoài
+                cv2.circle(frame, center_to_draw, 16, (255, 255, 255), 1) 
+                # 2. Vẽ dấu thập đỏ nhỏ bên trong
+                cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2)
 
             _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             if not frame_queue.full():
