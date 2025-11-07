@@ -12,8 +12,8 @@ import requests
 
 # <<< TỐI ƯU: Import module thay vì class lẻ >>>
 from module import camera_module, detection_module
-from app import ProcessingWorker
-# [THAY ĐỔI 1] Import thêm ConfigReporter
+# [THAY ĐỔI 1] Import thêm app và set_camera_instance
+from app import ProcessingWorker, app, set_camera_instance
 from threads.workers import SenderWorker, CommandPoller, TriggerListener, ConfigReporter
 from utils.audio import audio_manager
 
@@ -126,23 +126,32 @@ def main():
     server_url = f"http://{server_ip}:{config['server']['port']}"
     
     stream_cfg = config['camera']
-    cam = camera_module.Camera(width=stream_cfg['stream_width'], height=stream_cfg['stream_height'])
+    # [THAY ĐỔI 2] Truyền shared_state vào Camera để luồng stream có thể truy cập
+    cam = camera_module.Camera(
+        width=stream_cfg['stream_width'], 
+        height=stream_cfg['stream_height'],
+        shared_state=shared_state 
+    )
+    
+    # [THAY ĐỔI 3] Gửi đối tượng camera cho máy chủ streaming
+    set_camera_instance(cam)
+    logging.info("Đối tượng camera đã được đăng ký với máy chủ streaming.")
     
     # --- Phần khởi tạo worker và vòng lặp chính (giữ nguyên) ---
     processing_queue = queue.Queue(maxsize=5)
-    frame_queue = queue.Queue(maxsize=10)
+    frame_queue = queue.Queue(maxsize=10) # Hàng đợi này sẽ không được sử dụng nữa
     command_queue = queue.Queue(maxsize=5)
     ring_buffer = deque(maxlen=2)
 
     detector = detection_module.ObjectDetector(model_path=config['model']['path'])
     
-    # [THAY ĐỔI 2] Thêm ConfigReporter vào danh sách workers
+    # [THAY ĐỔI 4] XÓA SenderWorker khỏi danh sách
     workers = [
         ProcessingWorker(processing_queue, detector, server_url, config, shared_state),
-        SenderWorker(frame_queue, server_url, shared_state),
+        # SenderWorker(frame_queue, server_url, shared_state), # <<< ĐÃ XÓA/VÔ HIỆU HÓA
         CommandPoller(command_queue, server_url, shared_state),
         TriggerListener(processing_queue, ring_buffer, config, shared_state),
-        ConfigReporter(server_url, config, shared_state) # <--- DÒNG MỚI
+        ConfigReporter(server_url, config, shared_state)
     ]
     
     for worker in workers:
@@ -162,6 +171,14 @@ def main():
     audio_manager.play_connected()
     
     try:
+        # [THAY ĐỔI 5] Khởi chạy máy chủ streaming trong một luồng riêng
+        stream_server_thread = Thread(
+            target=lambda: app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False),
+            daemon=True
+        )
+        stream_server_thread.start()
+        logging.info(f"Máy chủ streaming MJPEG đã bắt đầu tại http://0.0.0.0:8000/stream.mjpg")
+
         while True:
             try:
                 command = command_queue.get_nowait()
@@ -180,25 +197,22 @@ def main():
             except queue.Empty:
                 pass
             
+            # Luồng chính chỉ cần lấy frame và đưa vào ring_buffer cho TriggerListener
             frame = cam.capture_frame()
             if frame is None:
                 continue
             
             ring_buffer.append(frame.copy())
 
-            if shared_state.calibrated_center:
-                center_to_draw = (shared_state.calibrated_center['x'], shared_state.calibrated_center['y'])
-                # [THAY ĐỔI] Vẽ hồng tâm mới tinh tế hơn
-                # 1. Vẽ vòng tròn trắng bên ngoài
-                cv2.circle(frame, center_to_draw, 16, (255, 255, 255), 1) 
-                # 2. Vẽ dấu thập đỏ nhỏ bên trong
-                cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2)
-
-            _, jpg_buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
-            if not frame_queue.full():
-                frame_queue.put(jpg_buffer.tobytes())
+            # [THAY ĐỔI 6] ĐÃ XÓA CÁC DÒNG MÃ HÓA VÀ PUSH VÀO frame_queue
+            # if shared_state.calibrated_center:
+            #     ... (đã chuyển logic vẽ hồng tâm vào generate_frames)
+            # _, jpg_buffer = cv2.imencode(...)
+            # if not frame_queue.full():
+            #     frame_queue.put(jpg_buffer.tobytes())
             
-            time.sleep(0.01)
+            # Vòng lặp chính giờ đây rất nhẹ
+            time.sleep(0.01) # Giữ cho vòng lặp không chạy quá nhanh
                 
     except KeyboardInterrupt:
         logging.info("\n🛑 Nhận tín hiệu thoát...")

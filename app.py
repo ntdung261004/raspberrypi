@@ -3,7 +3,9 @@ import queue
 import requests
 import logging
 import os
+import time
 from threading import Thread
+from flask import Flask, Response  # <<< THÊM MỚI
 
 # Import các module chức năng
 from utils.processing import check_object_center
@@ -104,3 +106,78 @@ class ProcessingWorker(Thread):
     def stop(self):
         self.running = False
         print("🛑 ProcessingWorker đã dừng.")
+
+# =================================================================
+# === PHẦN THÊM MỚI: MÁY CHỦ STREAMING VIDEO CHO PICAMERA2 ===
+# =================================================================
+
+app = Flask(__name__)
+
+camera_instance = None
+
+def set_camera_instance(cam):
+    """
+    Hàm này được gọi từ main.py để đưa đối tượng camera vào app.
+    """
+    global camera_instance
+    camera_instance = cam
+
+def generate_frames():
+    """
+    Generator tạo luồng MJPEG từ đối tượng camera (Picamera2).
+    """
+    global camera_instance
+    
+    # Chờ cho đến khi camera được khởi tạo bởi main.py
+    while camera_instance is None or not camera_instance.is_running():
+        logging.warning("Streamer: Đang chờ camera khởi tạo...")
+        time.sleep(1)
+        
+    logging.info("Streamer: Camera đã sẵn sàng, bắt đầu luồng video.")
+    
+    last_frame_time = 0
+    while True:
+        try:
+            # Giới hạn tốc độ khung hình của luồng stream
+            current_time = time.time()
+            if (current_time - last_frame_time) < 0.03: # ~30 FPS
+                time.sleep(0.01)
+                continue
+            last_frame_time = current_time
+
+            # Lấy khung hình trực tiếp từ camera_module
+            frame = camera_instance.capture_frame() 
+            
+            if frame is None:
+                logging.warning("Streamer: Không nhận được khung hình từ camera.")
+                time.sleep(0.5)
+                continue
+
+            # Vẽ hồng tâm lên luồng video
+            center_coords = camera_instance.shared_state.calibrated_center
+            if center_coords:
+                center_to_draw = (center_coords['x'], center_coords['y'])
+                cv2.circle(frame, center_to_draw, 16, (255, 255, 255), 1) 
+                cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2)
+
+            # Mã hóa khung hình thành JPEG
+            (flag, encodedImage) = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            
+            if not flag:
+                continue
+                
+            # Trả về khung hình dưới dạng byte
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
+            
+        except Exception as e:
+            logging.error(f"Lỗi trong luồng generate_frames: {e}")
+            break
+
+@app.route('/stream.mjpg')
+def video_feed():
+    """
+    Route chính để cung cấp luồng video cho máy chủ.
+    """
+    return Response(generate_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')

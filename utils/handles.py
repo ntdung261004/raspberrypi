@@ -22,9 +22,9 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
     
     # [THAY ĐỔI] Quy định màu và kích thước mới
     HIT_COLOR = (0, 0, 255)  # Luôn là màu đỏ
-    CIRCLE_RADIUS = 25       # Bán kính vòng tròn to hơn
-    MARKER_SIZE = 30         # Kích thước dấu thập to hơn
-    THICKNESS = 2            # Độ dày nét vẽ
+    CIRCLE_RADIUS = 25      # Bán kính vòng tròn to hơn
+    MARKER_SIZE = 30        # Kích thước dấu thập to hơn
+    THICKNESS = 2           # Độ dày nét vẽ
     
     # === BƯỚC 1: Thử warp với ảnh gốc thứ nhất ===
     print("✅ Bắn trúng bia 7. Thử warp với ảnh gốc 1...")
@@ -68,7 +68,7 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
         'time': capture_time, 'target': 'Bia số 7', 'score': score,
         'image_data': base64.b64encode(img_buffer).decode('utf-8')
     }
-  
+
 def handle_hit_bia_so_8(hit_info, capture_time, original_frame, 
                         original_img_bia8, original_img_bia8_alt, 
                         mask_bia8):
@@ -85,9 +85,9 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
 
     # [THAY ĐỔI] Quy định màu và kích thước mới
     HIT_COLOR = (0, 0, 255)  # Luôn là màu đỏ
-    CIRCLE_RADIUS = 25       # Bán kính vòng tròn to hơn
-    MARKER_SIZE = 30         # Kích thước dấu thập to hơn
-    THICKNESS = 2            # Độ dày nét vẽ
+    CIRCLE_RADIUS = 25      # Bán kính vòng tròn to hơn
+    MARKER_SIZE = 30        # Kích thước dấu thập to hơn
+    THICKNESS = 2           # Độ dày nét vẽ
     
     # === BƯỚC 1: Thử warp với ảnh gốc thứ nhất ===
     print("✅ Bắn trúng bia 8. Thử warp với ảnh gốc 1...")
@@ -131,7 +131,7 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
         'time': capture_time, 'target': 'Bia số 8', 'score': score,
         'image_data': base64.b64encode(img_buffer).decode('utf-8')
     }
-  
+
 def handle_hit_bia_so_4(hit_info, capture_time, original_frame, 
                         original_img_bia4, original_img_bia4_alt, 
                         mask_bia4):
@@ -148,9 +148,9 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
     
     # [THAY ĐỔI] Quy định màu và kích thước mới
     HIT_COLOR = (0, 0, 255)  # Luôn là màu đỏ
-    CIRCLE_RADIUS = 25       # Bán kính vòng tròn to hơn
-    MARKER_SIZE = 30         # Kích thước dấu thập to hơn
-    THICKNESS = 2            # Độ dày nét vẽ
+    CIRCLE_RADIUS = 25      # Bán kính vòng tròn to hơn
+    MARKER_SIZE = 30        # Kích thước dấu thập to hơn
+    THICKNESS = 2           # Độ dày nét vẽ
     
     # === BƯỚC 1: Thử warp với ảnh gốc thứ nhất ===
     print("✅ Bắn trúng bia 4. Thử warp với ảnh gốc 1...")
@@ -159,6 +159,9 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
     if warped_img is not None and transformed_point is not None:
         print("✅ Warp (ảnh 1) thành công. Đang tính điểm...")
         score = calculate_score_bia4(transformed_point, original_img_bia4, mask_bia4)
+        
+        # === SỬA LỖI 1: Sử dụng `transformed_point` ===
+        point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
         cv2.circle(processed_image, point_to_draw, CIRCLE_RADIUS, (255, 255, 255), THICKNESS)
         cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
     else:
@@ -170,6 +173,9 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
             print("✅ Warp (ảnh 2) thành công. Đang tính điểm...")
             # Tính điểm với dữ liệu của ảnh thứ hai
             score = calculate_score_bia4(transformed_point_alt, original_img_bia4_alt, mask_bia4)
+            
+            # === SỬA LỖI 2: Sử dụng `transformed_point_alt` ===
+            point_to_draw = (int(transformed_point_alt[0]), int(transformed_point_alt[1]))
             # Vẽ điểm đã biến đổi lên ảnh gốc đầu tiên để có kết quả nhất quán
             cv2.circle(processed_image, point_to_draw, CIRCLE_RADIUS, (255, 255, 255), THICKNESS)
             cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
@@ -184,6 +190,9 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
             scaled_shot_point = (scaled_shot_point_x, scaled_shot_point_y)
 
             score = calculate_score_bia4(scaled_shot_point, original_img_bia4, mask_bia4)
+            
+            # === SỬA LỖI 3: Sử dụng `scaled_shot_point` ===
+            point_to_draw = scaled_shot_point
             cv2.circle(processed_image, point_to_draw, CIRCLE_RADIUS, (255, 255, 255), THICKNESS)
             cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
 
