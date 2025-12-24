@@ -177,7 +177,7 @@ def main():
             daemon=True
         )
         stream_server_thread.start()
-        logging.info(f"Máy chủ streaming MJPEG đã bắt đầu tại http://0.0.0.0:8000/stream.mjpg")
+        logging.info(f"Máy chủ streaming MJPEG đã bắt đầu tại http://0.0.0.0:8000/streamSTV.mjpg")
 
         while True:
             try:

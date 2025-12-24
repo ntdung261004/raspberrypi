@@ -157,7 +157,6 @@ def generate_frames():
             center_coords = camera_instance.shared_state.calibrated_center
             if center_coords:
                 center_to_draw = (center_coords['x'], center_coords['y'])
-                cv2.circle(frame, center_to_draw, 16, (255, 255, 255), 1) 
                 cv2.drawMarker(frame, center_to_draw, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2)
 
             # Mã hóa khung hình thành JPEG
@@ -174,7 +173,7 @@ def generate_frames():
             logging.error(f"Lỗi trong luồng generate_frames: {e}")
             break
 
-@app.route('/stream.mjpg')
+@app.route('/streamSTV.mjpg')
 def video_feed():
     """
     Route chính để cung cấp luồng video cho máy chủ.

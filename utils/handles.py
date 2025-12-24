@@ -22,7 +22,6 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
     
     # [THAY ĐỔI] Quy định màu và kích thước mới
     HIT_COLOR = (0, 0, 255)  # Luôn là màu đỏ
-    CIRCLE_RADIUS = 25      # Bán kính vòng tròn to hơn
     MARKER_SIZE = 30        # Kích thước dấu thập to hơn
     THICKNESS = 2           # Độ dày nét vẽ
     
@@ -33,8 +32,9 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
     if warped_img is not None and transformed_point is not None:
         print("✅ Warp (ảnh 1) thành công. Đang tính điểm...")
         score = calculate_score_bia7(transformed_point, original_img_bia7, mask_bia7)
-        cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), 
-                       (0, 0, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu đỏ: thành công ở lần 1
+        point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
+        
+        cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
     else:
         # === BƯỚC 2: Thử warp với ảnh gốc thứ hai nếu BƯỚC 1 thất bại ===
         print("❌ Warp (ảnh 1) thất bại. Thử warp với ảnh gốc 2...")
@@ -44,9 +44,9 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
             print("✅ Warp (ảnh 2) thành công. Đang tính điểm...")
             # Tính điểm với dữ liệu của ảnh thứ hai
             score = calculate_score_bia7(transformed_point_alt, original_img_bia7_alt, mask_bia7)
-            # Vẽ điểm đã biến đổi lên ảnh gốc đầu tiên để có kết quả nhất quán
-            cv2.drawMarker(processed_image, (int(transformed_point_alt[0]), int(transformed_point_alt[1])), 
-                           (0, 165, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu cam: thành công ở lần 2
+            point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
+        
+            cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
         else:
             # === BƯỚC 3: Dùng ảnh crop nếu cả hai lần warp đều thất bại ===
             print("❌ Warp (ảnh 2) cũng thất bại. Tính điểm trên ảnh crop.")
@@ -58,8 +58,9 @@ def handle_hit_bia_so_7(hit_info, capture_time, original_frame,
             scaled_shot_point = (scaled_shot_point_x, scaled_shot_point_y)
             
             score = calculate_score_bia7(scaled_shot_point, original_img_bia7, mask_bia7)
-            cv2.drawMarker(processed_image, scaled_shot_point, 
-                           (0, 255, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu vàng: warp thất bại
+            point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
+        
+            cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
 
     audio_manager.play_score(score)
     _, img_buffer = cv2.imencode('.jpg', processed_image)
@@ -85,7 +86,6 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
 
     # [THAY ĐỔI] Quy định màu và kích thước mới
     HIT_COLOR = (0, 0, 255)  # Luôn là màu đỏ
-    CIRCLE_RADIUS = 25      # Bán kính vòng tròn to hơn
     MARKER_SIZE = 30        # Kích thước dấu thập to hơn
     THICKNESS = 2           # Độ dày nét vẽ
     
@@ -96,8 +96,9 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
     if warped_img is not None and transformed_point is not None:
         print("✅ Warp (ảnh 1) thành công. Đang tính điểm...")
         score = calculate_score_bia8(transformed_point, original_img_bia8, mask_bia8)
-        cv2.drawMarker(processed_image, (int(transformed_point[0]), int(transformed_point[1])), 
-                       (0, 0, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu đỏ: thành công ở lần 1
+        point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
+        
+        cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
     else:
         # === BƯỚC 2: Thử warp với ảnh gốc thứ hai nếu BƯỚC 1 thất bại ===
         print("❌ Warp (ảnh 1) thất bại. Thử warp với ảnh gốc 2...")
@@ -107,9 +108,9 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
             print("✅ Warp (ảnh 2) thành công. Đang tính điểm...")
             # Tính điểm với dữ liệu của ảnh thứ hai
             score = calculate_score_bia7(transformed_point_alt, original_img_bia8_alt, mask_bia8)
-            # Vẽ điểm đã biến đổi lên ảnh gốc đầu tiên để có kết quả nhất quán
-            cv2.drawMarker(processed_image, (int(transformed_point_alt[0]), int(transformed_point_alt[1])), 
-                           (0, 165, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu cam: thành công ở lần 2
+            point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
+        
+            cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
         else:
             # === BƯỚC 3: Dùng ảnh crop nếu cả hai lần warp đều thất bại ===
             print("❌ Warp (ảnh 2) cũng thất bại. Tính điểm trên ảnh crop.")
@@ -121,8 +122,9 @@ def handle_hit_bia_so_8(hit_info, capture_time, original_frame,
             scaled_shot_point = (scaled_shot_point_x, scaled_shot_point_y)
             
             score = calculate_score_bia8(scaled_shot_point, original_img_bia8, mask_bia8)
-            cv2.drawMarker(processed_image, scaled_shot_point, 
-                           (0, 255, 255), cv2.MARKER_CROSS, markerSize=40, thickness=3) # Màu vàng: warp thất bại
+            point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
+        
+            cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
 
     audio_manager.play_score(score)
     _, img_buffer = cv2.imencode('.jpg', processed_image)
@@ -148,7 +150,6 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
     
     # [THAY ĐỔI] Quy định màu và kích thước mới
     HIT_COLOR = (0, 0, 255)  # Luôn là màu đỏ
-    CIRCLE_RADIUS = 25      # Bán kính vòng tròn to hơn
     MARKER_SIZE = 30        # Kích thước dấu thập to hơn
     THICKNESS = 2           # Độ dày nét vẽ
     
@@ -162,7 +163,6 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
         
         # === SỬA LỖI 1: Sử dụng `transformed_point` ===
         point_to_draw = (int(transformed_point[0]), int(transformed_point[1]))
-        cv2.circle(processed_image, point_to_draw, CIRCLE_RADIUS, (255, 255, 255), THICKNESS)
         cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
     else:
         # === BƯỚC 2: Thử warp với ảnh gốc thứ hai nếu BƯỚC 1 thất bại ===
@@ -177,7 +177,6 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
             # === SỬA LỖI 2: Sử dụng `transformed_point_alt` ===
             point_to_draw = (int(transformed_point_alt[0]), int(transformed_point_alt[1]))
             # Vẽ điểm đã biến đổi lên ảnh gốc đầu tiên để có kết quả nhất quán
-            cv2.circle(processed_image, point_to_draw, CIRCLE_RADIUS, (255, 255, 255), THICKNESS)
             cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
         else:
             # === BƯỚC 3: Dùng ảnh crop nếu cả hai lần warp đều thất bại ===
@@ -193,7 +192,6 @@ def handle_hit_bia_so_4(hit_info, capture_time, original_frame,
             
             # === SỬA LỖI 3: Sử dụng `scaled_shot_point` ===
             point_to_draw = scaled_shot_point
-            cv2.circle(processed_image, point_to_draw, CIRCLE_RADIUS, (255, 255, 255), THICKNESS)
             cv2.drawMarker(processed_image, point_to_draw, HIT_COLOR, markerType=cv2.MARKER_CROSS, markerSize=MARKER_SIZE, thickness=THICKNESS)
 
     audio_manager.play_score(score)
@@ -220,7 +218,6 @@ def handle_miss(hit_info, capture_time, original_frame):
     
     shot_point = hit_info['shot_point']
     processed_image = original_frame.copy()
-    cv2.circle(processed_image, shot_point, 16, (255, 255, 255), 1)
     cv2.drawMarker(processed_image, shot_point, (0, 0, 255), markerType=cv2.MARKER_CROSS, markerSize=15, thickness=2)
     
     _, img_buffer = cv2.imencode('.jpg', processed_image)
